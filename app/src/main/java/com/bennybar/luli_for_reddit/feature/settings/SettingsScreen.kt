@@ -1,5 +1,8 @@
 package com.bennybar.luli_for_reddit.feature.settings
 
+import androidx.compose.material.icons.automirrored.rounded.Notes
+import com.bennybar.luli_for_reddit.feature.inbox.InboxNotifications
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.outlined.Folder
@@ -316,11 +319,13 @@ fun SettingsList(
     var aiKeySet by remember { mutableStateOf(false) }
     var giphyKeySet by remember { mutableStateOf(false) }
     var azureKeySet by remember { mutableStateOf(false) }
+    var deeplKeySet by remember { mutableStateOf(false) }
     var authMode by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(secureVersion, session) {
         aiKeySet = !app.secureStore.openaiKey().isNullOrEmpty()
         giphyKeySet = !app.secureStore.giphyKey().isNullOrEmpty()
         azureKeySet = !app.secureStore.azureTranslatorKey().isNullOrEmpty()
+        deeplKeySet = !app.secureStore.deeplKey().isNullOrEmpty()
         authMode = runCatching { app.secureStore.authMode() }.getOrNull()
     }
     val web = authMode == "web"
@@ -372,6 +377,11 @@ fun SettingsList(
             pickOption(PostDisplay.entries.map { PickOption(it, it.label, icon = it.icon) }, s.postDisplay)
                 ?.let(ctrl::setPostDisplay)
         })
+        // How much of a post's text feeds show (#186).
+        val textLines = listOf(PickOption(0, "Layout's default", "2 or 3 lines"), PickOption(5, "5 lines"), PickOption(10, "10 lines"))
+        tile("Post text in feeds", textLines.first { it.value == s.postTextLines }.label, Icons.AutoMirrored.Rounded.Notes, onClick = launch {
+            pickOption(textLines, s.postTextLines)?.let(ctrl::setPostTextLines)
+        })
         switch(
             "Subreddit icons", "Show each community's icon on posts instead of its first letter",
             Icons.Rounded.Image, s.subredditIcons, ctrl::setSubredditIcons,
@@ -383,9 +393,10 @@ fun SettingsList(
             "Posts tab shows r/all", "Instead of your frontpage, which Explore's All button opens then. For You, Blend and Reddit Home don't apply.",
             Icons.Rounded.Public, s.postsTabAll, ctrl::setPostsTabAll,
         )
+        // What Home shows, as the chips at its top (#199): picking Best there turns it off.
         switch(
-            "\"For You\" feed",
-            "A personalized frontpage, built on your phone from what you read and like",
+            "Home shows For You",
+            "Your personalized frontpage, built on your phone. Same as picking For You at the top of Home",
             Icons.Rounded.AutoAwesome, s.forYouFeed, ctrl::setForYouFeed,
         )
         switch(
@@ -412,8 +423,8 @@ fun SettingsList(
         })
         if (s.redditHomeAllowed) {
             switch(
-                "Blend (Beta)",
-                "For You also ranks your Reddit Home: Reddit's recommendations, under your For You choices",
+                "Home shows Blend (Beta)",
+                "For You also ranks your Reddit Home: Reddit's recommendations, under your For You choices. Same as picking Blend on Home",
                 Icons.Rounded.Merge, s.forYouFeed && s.blendHome,
             ) { v ->
                 ctrl.setBlendHome(v)
@@ -677,6 +688,11 @@ fun SettingsList(
                 )?.let { ctrl.setCollapseBelowScore(it.takeIf { v -> v != Int.MIN_VALUE }) }
             },
         )
+        // The same switch as Content filters' (#202), where people look for collapsing.
+        switch(
+            "Collapse AutoModerator and bots", "Start AutoModerator's comments, and pinned comments by bots, collapsed",
+            Icons.Outlined.SmartToy, filters.collapseAutoMod, app.contentFilters::setCollapseAutoMod,
+        )
         switch(
             "Open threads collapsed",
             "Top-level comments show without their replies, each with a \"Show replies\" button",
@@ -745,9 +761,19 @@ fun SettingsList(
         section("Notifications")
         switch(
             "Inbox notifications",
-            "Check for replies & messages in the background (~every 15 min) and notify you. No Firebase — polling only.",
+            "Check for replies & messages in the background and notify you. No Firebase — polling only.",
             Icons.Outlined.NotificationsActive, s.notifyInbox,
         ) { v -> scope.launch { toggleInboxNotifications(v) } }
+        // How often (#188): less often saves battery and Reddit requests.
+        if (s.notifyInbox) {
+            val every = listOf(15, 30, 60, 180, 360).map { PickOption(it, InboxNotifications.intervalLabel(it)) }
+            tile("Check every", InboxNotifications.intervalLabel(s.inboxCheckMinutes), Icons.Outlined.Schedule, onClick = launch {
+                pickOption(every, s.inboxCheckMinutes)?.let {
+                    ctrl.setInboxCheckMinutes(it)
+                    app.inbox.registerPolling()
+                }
+            })
+        }
         switch(
             "Open Reddit app notifications in Ilay",
             when {
@@ -783,7 +809,7 @@ fun SettingsList(
         )
         tile(
             "Translation service",
-            (if (s.translateService == "azure") "Azure Translator" else "OpenAI (your AI key)") +
+            (when (s.translateService) { "azure" -> "Azure Translator"; "deepl" -> "DeepL"; else -> "OpenAI (your AI key)" }) +
                 " · for languages your phone can't translate",
             Icons.Outlined.Dns,
             onClick = launch {
@@ -791,6 +817,7 @@ fun SettingsList(
                     listOf(
                         PickOption("openai", "OpenAI", "Your AI summaries key; each translation costs a little"),
                         PickOption("azure", "Azure Translator", "Your Azure key; 2 million characters a month free"),
+                        PickOption("deepl", "DeepL", "Your DeepL API key"),
                     ),
                     s.translateService,
                 )?.let(ctrl::setTranslateService)
@@ -820,6 +847,24 @@ fun SettingsList(
                 ) as? TextResult.Save ?: return@launch
                 ctrl.setAzureRegion(r.text.trim())
             })
+        }
+        if (s.translateService == "deepl") {
+            tile(
+                "DeepL key",
+                if (deeplKeySet) "Key set — tap to change or remove" else "Add your DeepL API key (deepl.com › API)",
+                Icons.Outlined.Key,
+                onClick = launch {
+                    val r = textDialog(
+                        "DeepL key", secret = true, removable = deeplKeySet,
+                        note = "Stored securely on this device (never in backups). Translations send the text to DeepL.",
+                    ) ?: return@launch
+                    when (r) {
+                        TextResult.Remove -> app.secureStore.saveDeeplKey(null)
+                        is TextResult.Save -> if (r.text.isNotBlank()) app.secureStore.saveDeeplKey(r.text.trim())
+                    }
+                    secureVersion++
+                },
+            )
         }
         divider("translation")
 
@@ -1382,7 +1427,7 @@ private suspend fun toggleInboxNotifications(enable: Boolean) {
     // notification for every pre-existing item, then start the periodic poll.
     runCatching { app.inbox.pollInbox(notify = false) }
     app.inbox.registerPolling()
-    nav?.showSnackbar("Inbox notifications on. Reddit is checked about every 15 minutes.")
+    nav?.showSnackbar("Inbox notifications on. Reddit is checked about every ${InboxNotifications.intervalLabel(app.settings.value.inboxCheckMinutes)}.")
 }
 
 private suspend fun checkUpdatesNow() {

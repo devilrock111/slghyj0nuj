@@ -368,18 +368,13 @@ fun PostCard(listed: Post, modifier: Modifier = Modifier, swipeOverride: Pair<Sw
 
     var outer: Modifier = modifier
     // For You impressions (shown-but-never-opened posts get demoted on the
-    // next build) and "mark read on scroll" both need to know what was seen.
-    // A card flung past mid-scroll wasn't really seen; counting it would bury
-    // posts the user never had a chance to read. Only a card that sits ≥60%
-    // visible for a second counts as shown.
-    if (reason != null || settings.markReadOnScroll) {
+    // next build) need to know what was seen. A card flung past mid-scroll
+    // wasn't really seen; counting it would bury posts the user never had a
+    // chance to read. Only a card that sits ≥60% visible for a second counts
+    // as shown. ("Mark read on scroll" is the list's: once scrolled past, #201.)
+    if (reason != null) {
         outer = outer.onVisibilityChanged(minDurationMs = 1000, minFractionVisible = 0.6f) { visible ->
-            if (!visible) return@onVisibilityChanged
-            if (post.feedReason != null) app.forYou.learner.impression(post)
-            // "Mark read on scroll": a card actually seen counts as read (history
-            // only — no interest learning, which is for real engagement).
-            val s = app.settings.value
-            if (s.markReadOnScroll && s.trackHistory) app.history.markViewed(post)
+            if (visible) app.forYou.learner.impression(post)
         }
     }
 
@@ -502,7 +497,7 @@ private fun LargeCard(p: Post, a: PostActions, s: Settings, dim: Modifier, glow:
                 Text(
                     p.snippet,
                     Modifier.readDim(),
-                        maxLines = 3,
+                        maxLines = s.textLines(3),
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodyMedium,
                     color = cs.onSurfaceVariant,
@@ -543,7 +538,7 @@ private fun CardsCard(p: Post, a: PostActions, s: Settings, dim: Modifier, glow:
                 Text(
                     p.snippet,
                     Modifier.readDim(),
-                        maxLines = 2,
+                        maxLines = s.textLines(2),
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodyMedium,
                     color = cs.onSurfaceVariant,
@@ -766,7 +761,8 @@ internal fun rememberFlairText(flair: UserFlair): Pair<AnnotatedString, Map<Stri
             if (p.emojiUrl != null) {
                 val id = "e$i"
                 appendInlineContent(id, "□")
-                emoji[id] = InlineTextContent(Placeholder(14.sp, 14.sp, PlaceholderVerticalAlign.TextCenter)) {
+                // Big enough to make out (#193): Reddit's flair images are small.
+                emoji[id] = InlineTextContent(Placeholder(16.sp, 16.sp, PlaceholderVerticalAlign.TextCenter)) {
                     AsyncImage(p.emojiUrl, null, Modifier.fillMaxSize())
                 }
                 // Some flairs have no space of their own after the image.
@@ -1242,6 +1238,9 @@ private fun CalmCardsCard(p: Post, a: PostActions, s: Settings, dim: Modifier, g
     }
 }
 
+/** How many lines of a post's text a card shows: Settings' choice (#186), else the layout's [own]. */
+private fun Settings.textLines(own: Int) = if (postTextLines > 0) postTextLines else own
+
 /** Header, title, flair, crosspost, media (when [mediaShape] is set), poll and selftext. */
 @Composable
 private fun CalmBody(p: Post, a: PostActions, s: Settings, mediaShape: androidx.compose.ui.graphics.Shape?) {
@@ -1268,7 +1267,7 @@ private fun CalmBody(p: Post, a: PostActions, s: Settings, mediaShape: androidx.
         Text(
             p.snippet,
             Modifier.padding(top = 6.dp).readDim(),
-            maxLines = 2,
+            maxLines = s.textLines(2),
             overflow = TextOverflow.Ellipsis,
             fontSize = 14.sp,
             color = cs.onSurfaceVariant,

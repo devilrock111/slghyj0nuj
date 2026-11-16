@@ -223,6 +223,7 @@ data class Settings(
     val subredditSorts: Map<String, SubredditSort> = emptyMap(), // by lowercase name; overrides defaultSort there
     val defaultCommentSort: String = "confidence", // reddit comment sort id
     val postDisplay: PostDisplay = PostDisplay.CALM,
+    val postTextLines: Int = 0, // a post's text in feeds, in lines (#186); 0: the layout's own (2–3)
     val commentStyle: CommentStyle = CommentStyle.SAME,
     val swipeActions: Boolean = true,
     val floatingChips: Boolean = true, // feeds: filter chips float under the top bar past the list's own
@@ -258,6 +259,7 @@ data class Settings(
     val feedGalleryCarousel: Boolean = true, // galleries in feeds as the M3 carousel (else one image at a time)
     val showApiUsage: Boolean = false, // show API usage instead of search on Posts screen
     val notifyInbox: Boolean = false, // background-poll the inbox + local notifications
+    val inboxCheckMinutes: Int = 15, // how often (#188): 15 is Android's shortest
     val redditAppNotifications: Boolean = false, // take over the Reddit app's notifications (needs notification access)
     val homeFab: HomeFab = HomeFab.NEW_POST, // floating button on Home and in subreddits (#90)
     val threadFab: ThreadFab = ThreadFab.NEW_COMMENT, // floating button in a thread (#90)

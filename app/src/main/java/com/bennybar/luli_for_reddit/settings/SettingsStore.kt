@@ -67,6 +67,7 @@ class SettingsStore(private val p: Prefs) {
             }.toMap(),
             defaultCommentSort = p.getString("defaultCommentSort") ?: d.defaultCommentSort,
             postDisplay = idx(PostDisplay.entries.toTypedArray(), "postDisplay", d.postDisplay),
+            postTextLines = p.getInt("postTextLines") ?: d.postTextLines,
             commentStyle = idx(CommentStyle.entries.toTypedArray(), "commentStyle", d.commentStyle),
             swipeActions = b("swipeActions", d.swipeActions),
             floatingChips = b("floatingChips", d.floatingChips),
@@ -100,6 +101,7 @@ class SettingsStore(private val p: Prefs) {
             feedGalleryCarousel = b("feedGalleryCarousel", d.feedGalleryCarousel),
             showApiUsage = b("showApiUsage", d.showApiUsage),
             notifyInbox = b("notifyInbox", d.notifyInbox),
+            inboxCheckMinutes = p.getInt("inboxCheckMinutes") ?: d.inboxCheckMinutes,
             redditAppNotifications = b("redditAppNotifications", d.redditAppNotifications),
             // Old installs may have stored the removed "compact" (1) or the old
             // expandable index (2); clamping maps both safely.
@@ -160,6 +162,7 @@ class SettingsStore(private val p: Prefs) {
     }
     fun setDefaultCommentSort(v: String) { p.setString("defaultCommentSort", v); set { it.copy(defaultCommentSort = v) } }
     fun setPostDisplay(v: PostDisplay) { p.setInt("postDisplay", v.ordinal); set { it.copy(postDisplay = v) } }
+    fun setPostTextLines(v: Int) { p.setInt("postTextLines", v); set { it.copy(postTextLines = v) } }
     fun setCommentStyle(v: CommentStyle) { p.setInt("commentStyle", v.ordinal); set { it.copy(commentStyle = v) } }
     fun setSwipeActions(v: Boolean) { p.setBool("swipeActions", v); set { it.copy(swipeActions = v) } }
     fun setFloatingChips(v: Boolean) { p.setBool("floatingChips", v); set { it.copy(floatingChips = v) } }
@@ -264,6 +267,7 @@ class SettingsStore(private val p: Prefs) {
     fun setFeedGalleryCarousel(v: Boolean) { p.setBool("feedGalleryCarousel", v); set { it.copy(feedGalleryCarousel = v) } }
     fun setShowApiUsage(v: Boolean) { p.setBool("showApiUsage", v); set { it.copy(showApiUsage = v) } }
     fun setNotifyInbox(v: Boolean) { p.setBool("notifyInbox", v); set { it.copy(notifyInbox = v) } }
+    fun setInboxCheckMinutes(v: Int) { p.setInt("inboxCheckMinutes", v); set { it.copy(inboxCheckMinutes = v) } }
     fun setRedditAppNotifications(v: Boolean) { p.setBool("redditAppNotifications", v); set { it.copy(redditAppNotifications = v) } }
     fun setHomeFab(v: HomeFab) { p.setInt("homeFab", v.ordinal); set { it.copy(homeFab = v) } }
     fun setThreadFab(v: ThreadFab) { p.setInt("threadFab", v.ordinal); set { it.copy(threadFab = v) } }

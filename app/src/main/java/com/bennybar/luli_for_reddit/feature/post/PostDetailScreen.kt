@@ -1,5 +1,8 @@
 package com.bennybar.luli_for_reddit.feature.post
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.LocalDensity
@@ -1523,7 +1526,8 @@ private fun CommentTile(
     val nameColor = when {
         isMod -> Color(0xFF4CAF50)
         isOwn -> cs.primary
-        else -> cs.onSurface
+        // The theme's softer tone, so a name stands apart from the text under it (#185).
+        else -> cs.secondary
     }
     val edge = railColors[(depth - 1).coerceIn(0, railColors.size - 1)].copy(alpha = 0.9f)
     // Settings → Mark what you voted on: a glow, or an edge on the other side.
@@ -1706,16 +1710,23 @@ internal fun Modifier.voteGlow(color: Color?, rtl: Boolean, fadeTop: Boolean = f
 private fun FlairChip(flair: UserFlair, modifier: Modifier = Modifier) {
     val cs = MaterialTheme.colorScheme
     val (text, emoji) = com.bennybar.luli_for_reddit.feature.feed.rememberFlairText(flair)
-    Text(
-        text,
-        // Lightly tinted, as post flairs are (#131).
-        modifier.widthIn(max = 160.dp).clip(RoundedCornerShape(6.dp)).background(cs.secondaryContainer).padding(horizontal = 6.dp, vertical = 1.dp),
-        fontSize = 11.sp,
-        color = cs.onSecondaryContainer,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        inlineContent = emoji,
-    )
+    // Beside a long name there may be next to no room left: then no chip, rather than an
+    // empty one or a lone "…" (#193). An image-only flair needs less than one with words.
+    if (flair.parts.none { !it.text.isNullOrBlank() || it.emojiUrl != null }) return // blank: nothing to show
+    val wordless = flair.parts.all { it.text.isNullOrBlank() }
+    BoxWithConstraints(modifier) {
+        if (maxWidth < if (wordless) 30.dp else 52.dp) return@BoxWithConstraints
+        Text(
+            text,
+            // Lightly tinted, as post flairs are (#131).
+            Modifier.widthIn(max = 200.dp).clip(RoundedCornerShape(6.dp)).background(cs.secondaryContainer).padding(horizontal = 6.dp, vertical = 1.dp),
+            fontSize = 11.sp,
+            color = cs.onSecondaryContainer,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            inlineContent = emoji,
+        )
+    }
 }
 
 @Composable
@@ -1770,6 +1781,25 @@ private fun CommentActionsRow(c: Comment, isOwn: Boolean, actions: ThreadActions
     }
 }
 
+/** A comment's text in a sheet, to select any part of it and copy that (#198). */
+@OptIn(ExperimentalMaterial3Api::class)
+private fun showSelectText(body: String) {
+    Overlays.launch { done ->
+        ModalBottomSheet(onDismissRequest = done) {
+            Column(
+                Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).navigationBarsPadding()
+                    .padding(start = 20.dp, end = 20.dp, bottom = 24.dp),
+            ) {
+                Text("Select text", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(4.dp))
+                Text("Long press a word, then drag to choose", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(12.dp))
+                RedditMarkdown(body, selectable = true)
+            }
+        }
+    }
+}
+
 /** The comment ⋯ menu's entries; [pick] closes the menu then runs the action. */
 @Composable
 private fun ColumnScope.CommentMenuItems(
@@ -1779,9 +1809,15 @@ private fun ColumnScope.CommentMenuItems(
     withSave: Boolean = false,
     pick: (() -> Unit) -> Unit,
 ) {
-    // Material 3 Expressive menu groups: share-ish actions, then yours (or
-    // block), then moderator actions.
+    // Material 3 Expressive menu groups: share-ish actions, then block,
+    // then moderator actions. Your own comment's Edit / Delete come first (#203).
     val groups = buildList<@Composable ColumnScope.() -> Unit> {
+        if (isOwn) {
+            add {
+                DropdownMenuItem(text = { Text("Edit") }, onClick = { pick { actions.edit(c) } })
+                DropdownMenuItem(text = { Text("Delete") }, onClick = { pick { actions.delete(c) } })
+            }
+        }
         add {
             if (withSave) DropdownMenuItem(text = { Text(if (c.saved) "Unsave" else "Save") }, onClick = { pick { actions.toggleSave(c) } })
             DropdownMenuItem(
@@ -1789,15 +1825,12 @@ private fun ColumnScope.CommentMenuItems(
                 onClick = { pick { actions.translate(c) } },
             )
             DropdownMenuItem(text = { Text("Copy text") }, onClick = { pick { copyToClipboard(c.body) } })
+            // Part of it (#198), as iOS's: long press stays collapse.
+            DropdownMenuItem(text = { Text("Select text") }, onClick = { pick { showSelectText(c.body) } })
             if (c.permalink.isNotEmpty()) DropdownMenuItem(text = { Text("Share") }, onClick = { pick { actions.share(c) } })
             DropdownMenuItem(text = { Text("Share as image") }, onClick = { pick { actions.shareImage(c) } })
         }
-        if (isOwn) {
-            add {
-                DropdownMenuItem(text = { Text("Edit") }, onClick = { pick { actions.edit(c) } })
-                DropdownMenuItem(text = { Text("Delete") }, onClick = { pick { actions.delete(c) } })
-            }
-        } else if (c.author != "[deleted]") {
+        if (!isOwn && c.author != "[deleted]") {
             add { DropdownMenuItem(text = { Text("Block u/${c.author}") }, onClick = { pick { actions.block(c) } }) }
         }
         // Moderators of this community (the post says so) can act on comments too.
@@ -1920,7 +1953,8 @@ private fun CalmCommentRow(
     val nameColor = when {
         comment.distinguished == "moderator" -> Color(0xFF4CAF50)
         isOwn -> cs.primary
-        else -> cs.onSurface
+        // The theme's softer tone, so a name stands apart from the text under it (#185).
+        else -> cs.secondary
     }
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     val toggle = { actions.toggle(comment) }

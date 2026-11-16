@@ -59,6 +59,7 @@ final class SettingsStore {
         }
         s.defaultCommentSort = p.getString("defaultCommentSort") ?? s.defaultCommentSort
         s.postDisplay = idx("postDisplay", s.postDisplay)
+        s.postTextLines = p.getInt("postTextLines") ?? s.postTextLines
         s.commentStyle = idx("commentStyle", s.commentStyle)
         s.swipeActions = b("swipeActions", s.swipeActions)
         s.floatingChips = b("floatingChips", s.floatingChips)
@@ -93,6 +94,7 @@ final class SettingsStore {
         s.feedGalleryCarousel = b("feedGalleryCarousel", s.feedGalleryCarousel)
         s.showApiUsage = b("showApiUsage", s.showApiUsage)
         s.notifyInbox = b("notifyInbox", s.notifyInbox)
+        s.inboxCheckMinutes = p.getInt("inboxCheckMinutes") ?? s.inboxCheckMinutes
         s.homeFab = idx("homeFab", s.homeFab)
         s.threadFabPosition = idx("threadFabPosition", s.threadFabPosition)
         s.threadJumpOp = b("threadJumpOp", s.threadJumpOp)
@@ -148,6 +150,7 @@ final class SettingsStore {
 
     func setDefaultCommentSort(_ v: String) { p.setString("defaultCommentSort", v); set { $0.defaultCommentSort = v } }
     func setPostDisplay(_ v: PostDisplay) { p.setInt("postDisplay", v.rawValue); set { $0.postDisplay = v } }
+    func setPostTextLines(_ v: Int) { p.setInt("postTextLines", v); set { $0.postTextLines = v } }
     func setCommentStyle(_ v: CommentStyle) { p.setInt("commentStyle", v.rawValue); set { $0.commentStyle = v } }
     func setSwipeActions(_ v: Bool) { p.setBool("swipeActions", v); set { $0.swipeActions = v } }
     func setFloatingChips(_ v: Bool) { p.setBool("floatingChips", v); set { $0.floatingChips = v } }
@@ -255,6 +258,7 @@ final class SettingsStore {
     func setFeedGalleryCarousel(_ v: Bool) { p.setBool("feedGalleryCarousel", v); set { $0.feedGalleryCarousel = v } }
     func setShowApiUsage(_ v: Bool) { p.setBool("showApiUsage", v); set { $0.showApiUsage = v } }
     func setNotifyInbox(_ v: Bool) { p.setBool("notifyInbox", v); set { $0.notifyInbox = v } }
+    func setInboxCheckMinutes(_ v: Int) { p.setInt("inboxCheckMinutes", v); set { $0.inboxCheckMinutes = v } }
     func setHomeFab(_ v: HomeFab) { p.setInt("homeFab", v.rawValue); set { $0.homeFab = v } }
     func setThreadFabPosition(_ v: ThreadFabPosition) { p.setInt("threadFabPosition", v.rawValue); set { $0.threadFabPosition = v } }
     func setThreadJumpOp(_ v: Bool) { p.setBool("threadJumpOp", v); set { $0.threadJumpOp = v } }

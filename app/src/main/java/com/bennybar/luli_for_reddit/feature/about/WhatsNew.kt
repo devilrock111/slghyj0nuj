@@ -45,6 +45,43 @@ class Release(val version: String, val date: String, val highlights: List<String
  */
 val CHANGELOG = listOf(
     Release(
+        "2.0.88", "Nov 16, 2026",
+        listOf(
+            "Translation: DeepL with your own API key, as a service for languages your phone can't translate (Settings › Translation service)",
+        ),
+    ),
+    Release(
+        "2.0.87", "Nov 16, 2026",
+        listOf(
+            "Settings › Feed › Post text in feeds: show 5 or 10 lines of a post's text in feeds",
+            "Your own comments have Edit and Delete at the top of their ⋯ menu",
+            "Removing an entry from History slides it all the way out before it goes",
+        ),
+    ),
+    Release(
+        "2.0.86", "Nov 16, 2026",
+        listOf(
+            "Notifications: choose how often Reddit is checked, from every 15 minutes to every 6 hours",
+            "A comment's ⋯ menu has Select text, to copy just part of it",
+            "Names in comments have their own softer colour, so they stand apart from the text",
+        ),
+    ),
+    Release(
+        "2.0.85", "Nov 16, 2026",
+        listOf(
+            "Tapping the top bar's empty space no longer opens the post under it",
+            "Flairs beside long names shorten or step aside instead of showing as an empty chip, and their images are bigger",
+            "Links in a community's description, About and rules open",
+            "Search suggests communities as you type",
+            "Profile pictures in comments also work when signed in with an API key",
+            "Mark read on scroll now marks a post once you've scrolled past it",
+            "Collapse AutoModerator also collapses pinned bot comments, and it's in Posts & comments settings too",
+            "The bottom bar hides with the same scroll as the floating buttons",
+            "One Back gesture leaves the media viewer; Tune For You has the new menu look",
+            "Settings: the For You and Blend switches say what they are: what Home shows",
+        ),
+    ),
+    Release(
         "2.0.84", "Nov 15, 2026",
         listOf(
             "Explore: Popular and All are separate sections, so you can move or hide each one (side by side, they stay a pair)",

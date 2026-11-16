@@ -79,6 +79,7 @@ struct SecureFlags: Equatable {
     var aiKey = false
     var giphyKey = false
     var azureKey = false
+    var deeplKey = false
     var web = false
 }
 
@@ -123,13 +124,18 @@ struct SettingsCatalog {
     private func feed(_ b: RowBuilder) {
         b.section("Feed")
         b.picker("Post display", value: s.postDisplay, options: PostDisplay.allCases.map { PickOption(value: $0, label: $0.label, icon: $0.icon) }, set: ctrl.setPostDisplay)
+        // How much of a post's text feeds show (#186).
+        b.picker("Post text in feeds", value: s.postTextLines,
+                 options: [PickOption(value: 0, label: "Layout's default"), PickOption(value: 5, label: "5 lines"), PickOption(value: 10, label: "10 lines")],
+                 set: ctrl.setPostTextLines)
         b.toggle("Subreddit icons", "Show each community's icon on posts instead of its first letter", s.subredditIcons, set: ctrl.setSubredditIcons)
         b.picker("Default sort", value: s.defaultSort, options: PostSort.allCases.map { PickOption(value: $0, label: $0.label) }, set: ctrl.setDefaultSort)
         b.toggle(
             "Posts tab shows r/all", "Instead of your frontpage, which Explore's All button opens then. For You, Blend and Reddit Home don't apply.",
             s.postsTabAll, set: ctrl.setPostsTabAll
         )
-        b.toggle("\"For You\" feed", "A personalized frontpage, built on your phone from what you read and like", s.forYouFeed, set: ctrl.setForYouFeed)
+        // What Home shows, as the chips at its top (#199): picking Best there turns it off.
+        b.toggle("Home shows For You", "Your personalized frontpage, built on your phone. Same as picking For You at the top of Home", s.forYouFeed, set: ctrl.setForYouFeed)
         b.toggle("Auto-hide read items in \"For You\"", "Hide posts you've marked/opened as read", s.autoHideReadForYou, set: ctrl.setAutoHideReadForYou)
         b.custom("forYouDiscovery", title: "For You mix", search: "For You mix familiar discover new communities") {
             ForYouMixSlider(value: s.forYouDiscovery)
@@ -153,7 +159,7 @@ struct SettingsCatalog {
         }
         if s.redditHomeAllowed {
             b.toggle(
-                "Blend (Beta)", "For You also ranks your Reddit Home: Reddit's recommendations, under your For You choices",
+                "Home shows Blend (Beta)", "For You also ranks your Reddit Home: Reddit's recommendations, under your For You choices. Same as picking Blend on Home",
                 s.forYouFeed && s.blendHome
             ) { v in
                 app.settings.setBlendHome(v)
@@ -262,6 +268,9 @@ struct SettingsCatalog {
         ) { v in
             app.settings.setCollapseBelowScore(v == off ? nil : v)
         }
+        // The same switch as Content filters' (#202), where people look for collapsing.
+        b.toggle("Collapse AutoModerator and bots", "Start AutoModerator's comments, and pinned comments by bots, collapsed",
+                 app.contentFilters.value.collapseAutoMod, set: app.contentFilters.setCollapseAutoMod)
         b.toggle("Open threads collapsed", "Top-level comments show without their replies, each with a \"Show replies\" button", s.collapseTopLevel, set: ctrl.setCollapseTopLevel)
         b.toggle("Swipe actions", "Swipe posts and comments sideways", s.swipeActions, set: ctrl.setSwipeActions)
         if s.swipeActions {
@@ -301,12 +310,20 @@ struct SettingsCatalog {
         let prompts = prompts
         b.toggle(
             "Inbox notifications",
-            "Check for replies & messages in the background (~every 15 min) and notify you. No Firebase — polling only.",
+            "Check for replies & messages in the background and notify you. No Firebase — polling only.",
             s.notifyInbox
         ) { v in
             Task {
                 await toggleInboxNotifications(v)
                 prompts.refresh += 1
+            }
+        }
+        // How often (#188): less often saves battery and Reddit requests.
+        if s.notifyInbox {
+            b.picker("Check every", value: s.inboxCheckMinutes,
+                     options: [15, 30, 60, 180, 360].map { PickOption(value: $0, label: InboxNotifications.intervalLabel($0)) }) { v in
+                app.settings.setInboxCheckMinutes(v)
+                InboxNotifications.registerPolling()
             }
         }
         b.link("Notification activity", "What Ilay notified you about, what it couldn't, and why · Check now", .notificationActivity)
@@ -332,6 +349,7 @@ struct SettingsCatalog {
             options: [
                 PickOption(value: "openai", label: "OpenAI", subtitle: "Your AI summaries key; each translation costs a little"),
                 PickOption(value: "azure", label: "Azure Translator", subtitle: "Your Azure key; 2 million characters a month free"),
+                PickOption(value: "deepl", label: "DeepL", subtitle: "Your DeepL API key"),
             ],
             set: ctrl.setTranslateService
         )
@@ -361,6 +379,25 @@ struct SettingsCatalog {
                 ) { r in
                     if case let .save(text) = r { app.settings.setAzureRegion(text.trimmed) }
                 }, initial: s.azureRegion)
+            }
+        }
+        if s.translateService == "deepl" {
+            let prompts = prompts
+            b.tile("DeepL key", secure.deeplKey ? "Key set — tap to change or remove" : "Add your DeepL API key (deepl.com › API)") {
+                prompts.ask(TextPrompt(
+                    title: "DeepL key",
+                    note: "Stored securely on this device (never in backups). Translations send the text to DeepL.",
+                    secret: true,
+                    removable: secure.deeplKey
+                ) { r in
+                    Task {
+                        switch r {
+                        case .remove: await app.secureStore.saveDeeplKey(nil)
+                        case let .save(text): if !text.isBlank { await app.secureStore.saveDeeplKey(text.trimmed) }
+                        }
+                        prompts.refresh += 1
+                    }
+                })
             }
         }
     }
@@ -958,6 +995,7 @@ struct SettingsScreen: View {
                 aiKey: !(await store.openaiKey() ?? "").isEmpty,
                 giphyKey: !(await store.giphyKey() ?? "").isEmpty,
                 azureKey: !(await store.azureTranslatorKey() ?? "").isEmpty,
+                deeplKey: !(await store.deeplKey() ?? "").isEmpty,
                 web: await store.authMode() == "web"
             )
         }
@@ -1051,7 +1089,7 @@ private func dayLabel(_ days: Int) -> String { days == 1 ? "1 day" : "\(days) da
     // notification for every pre-existing item, then start the periodic poll.
     _ = await app.inbox.pollInbox(notify: false)
     app.inbox.registerPolling()
-    nav.showSnackbar("Inbox notifications on. Reddit is checked about every 15 minutes.")
+    nav.showSnackbar("Inbox notifications on. Reddit is checked about every \(InboxNotifications.intervalLabel(app.settings.value.inboxCheckMinutes)).")
 }
 
 @MainActor private func checkUpdatesNow() async {
