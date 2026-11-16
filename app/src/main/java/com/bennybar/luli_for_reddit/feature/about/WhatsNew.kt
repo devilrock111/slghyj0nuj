@@ -45,6 +45,40 @@ class Release(val version: String, val date: String, val highlights: List<String
  */
 val CHANGELOG = listOf(
     Release(
+        "2.0.84", "Nov 15, 2026",
+        listOf(
+            "Explore: Popular and All are separate sections, so you can move or hide each one (side by side, they stay a pair)",
+            "Filtering your communities shows Favorites, Recently visited and Subscriptions under their own headers",
+            "The filter bar is one connected piece: its filter icon opens the sort, and the Favorites star is attached to it",
+        ),
+    ),
+    Release(
+        "2.0.83", "Nov 15, 2026",
+        listOf(
+            "Threads reopen where you left off, with a button to jump back to the top",
+            "Notifications: a clearer app icon, short titles like \"u/name replied\" with the post's title above, and Mark as read and Reply buttons",
+            "Menus have a fresh look: options in rounded groups with icons, and what's picked as a tinted pill",
+            "Profile's sort: Top's time ranges show in the same menu",
+        ),
+    ),
+    Release(
+        "2.0.82", "Nov 15, 2026",
+        listOf(
+            "Posts you voted on glow in the vote's colour, as comments do (Settings › Mark what you voted on › Glow)",
+            "Floating buttons fold only once you really scroll, open with a little bounce, and have less rounded corners",
+            "Explore: each community in a list is its own segment, and the community rows move like the gallery carousel",
+            "Explore's Full top bar is the same as Home's; with the side bar on, your picture is smaller and the search bar centred",
+        ),
+    ),
+    Release(
+        "2.0.81", "Nov 15, 2026",
+        listOf(
+            "Calm comments: swiping a comment to vote no longer hides its thread lines; they slide with it",
+            "History and Summaries: the selection bar's × and count line up with the title",
+            "For You's subtitle is now \"On your phone\", so it fits beside the title",
+        ),
+    ),
+    Release(
         "2.0.80", "Nov 12, 2026",
         listOf(
             "Explore: Popular communities, a row of Reddit's popular communities you haven't joined, with Join",

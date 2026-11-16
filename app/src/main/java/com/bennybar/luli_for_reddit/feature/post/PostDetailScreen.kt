@@ -11,7 +11,7 @@ import com.bennybar.luli_for_reddit.ui.SearchIcon
 import com.bennybar.luli_for_reddit.ui.subredditName
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import com.bennybar.luli_for_reddit.feature.feed.FabScroll
+import com.bennybar.luli_for_reddit.feature.feed.rememberFabScroll
 import com.bennybar.luli_for_reddit.feature.feed.CollapsingFab
 import com.bennybar.luli_for_reddit.settings.ThreadFab
 import com.bennybar.luli_for_reddit.settings.ThreadFabPosition
@@ -57,6 +57,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.lazy.layout.LazyLayoutCacheWindow
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -263,6 +264,8 @@ fun PostDetailScreen(subreddit: String, postId: String, focusCommentId: String?)
     @OptIn(ExperimentalFoundationApi::class)
     val listState = rememberLazyListState(cacheWindow = LazyLayoutCacheWindow(ahead = 900.dp, behind = 300.dp))
     val scope = rememberCoroutineScope()
+    // Reopens where you left off (#179); a link to one comment opens on that comment instead.
+    if (focusCommentId == null) ThreadPosition(postId, listState, flat)
     val haptic = LocalHapticFeedback.current
 
     // In-post comment search. Matches by fullname, not list position:
@@ -365,7 +368,7 @@ fun PostDetailScreen(subreddit: String, postId: String, focusCommentId: String?)
         revealId = null
     }
 
-    val fab = remember { FabScroll() }
+    val fab = rememberFabScroll()
     Scaffold(
         topBar = {
             TopAppBar(
@@ -488,6 +491,40 @@ fun PostDetailScreen(subreddit: String, postId: String, focusCommentId: String?)
             }
         }
     }
+}
+
+/**
+ * Where you were in a thread (#179): reopening it scrolls back to the comment that was at
+ * the top of the screen, once the comments are in, with "Top" to go back up. Saved as you
+ * leave, or when Android stops the app; at the top, it's forgotten.
+ */
+@Composable
+private fun ThreadPosition(postId: String, listState: LazyListState, flat: List<Comment>) {
+    val nav = LocalNavigator.current
+    val scope = rememberCoroutineScope()
+    val resumeAt = remember(postId) { app.threadVisits.lastPosition(postId) }
+    // Once a visit: not again on coming back from a profile or a link opened from here.
+    var resumed by rememberSaveable(postId) { mutableStateOf(resumeAt == null) }
+    LaunchedEffect(flat.isNotEmpty()) {
+        if (resumed || flat.isEmpty() || resumeAt == null) return@LaunchedEffect
+        resumed = true
+        val i = flat.indexOfFirst { it.fullname == resumeAt.first }
+        if (i < 0) return@LaunchedEffect // gone, or folded away: the top, as before
+        listState.scrollToItem(i + 1, resumeAt.second) // the post's header is item 0
+        nav.showSnackbar("Back where you left off", actionLabel = "Top") { scope.launch { listState.animateScrollToItem(0) } }
+    }
+    fun save() {
+        // Still loading: nothing new to save, and the last position stays.
+        if (!resumed) return
+        val key = listState.layoutInfo.visibleItemsInfo.firstOrNull()?.key as? String
+        if (listState.firstVisibleItemIndex == 0 || key == null || !key.startsWith("t1_")) {
+            app.threadVisits.recordPosition(postId, null, 0)
+        } else {
+            app.threadVisits.recordPosition(postId, key, listState.firstVisibleItemScrollOffset)
+        }
+    }
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { save() }
+    DisposableEffect(postId) { onDispose { save() } }
 }
 
 /** Pause/resume reading time with the screen; learn when another screen covers it. */
@@ -669,7 +706,7 @@ private class ThreadActions(val vm: CommentsViewModel, val nav: AppNavigator, va
 
     /** ⋯ → Translate / Show original on one comment. */
     fun translate(c: Comment) = vm.translateComment(c.fullname) { targets ->
-        pickOption(targets.map { PickOption(it, "Translate to ${Translate.languageName(it)}") }, null, radio = false)
+        pickOption(targets.map { PickOption(it, "Translate to ${Translate.languageName(it)}") }, null)
     }
 
     fun block(c: Comment) {
@@ -722,13 +759,18 @@ private fun CommentList(
                     val first = i == 0 || c.depth == 0
                     val last = i == flat.lastIndex || flat[i + 1].depth == 0
                     val rails = CalmRails(c.depth, prev = if (i == 0) 0 else flat[i - 1].depth, next = if (i == flat.lastIndex) 0 else flat[i + 1].depth)
-                    CalmThreadRow(first, last, highlighted = currentMatchId == c.fullname, rails) {
+                    CalmThreadRow(first, last, highlighted = currentMatchId == c.fullname) {
                         if (c.isMore) {
-                            MoreRow(c, loading = c.fullname in thread.loadingMore, onClick = { actions.loadMore(c) }, start = calmIndent(c.depth) - 6.dp)
+                            Box(Modifier.fillMaxWidth().calmRails(rails)) {
+                                MoreRow(c, loading = c.fullname in thread.loadingMore, onClick = { actions.loadMore(c) }, start = calmIndent(c.depth) - 6.dp)
+                            }
                         } else {
+                            val folded = CommentTree.folded(c.id) in thread.collapsed && c.id !in thread.collapsed
                             Column {
                                 CalmCommentRow(
                                     comment = c,
+                                    // Folded replies under it carry the lines on.
+                                    rails = if (folded) CalmRails(rails.depth, rails.prev, next = rails.depth) else rails,
                                     isNew = isNew(c),
                                     isOwn = username.isNotEmpty() && c.author == username,
                                     opAuthor = thread.post.author,
@@ -736,7 +778,9 @@ private fun CommentList(
                                     settings = settings,
                                     actions = actions,
                                 )
-                                if (CommentTree.folded(c.id) in thread.collapsed && c.id !in thread.collapsed) FoldedReplies(c, actions)
+                                if (folded) {
+                                    Box(Modifier.fillMaxWidth().calmRails(CalmRails(rails.depth, prev = rails.depth, rails.next))) { FoldedReplies(c, actions) }
+                                }
                             }
                         }
                     }
@@ -1625,11 +1669,12 @@ private fun Badge(text: String, bg: Color, fg: Color, size: androidx.compose.ui.
 
 /**
  * Settings → Mark comments you voted on (#122): the vote's colour glows softly from
- * the comment's top corner (the end side), fading in and out with the vote. A still
- * gradient, drawn: nothing to lay out or animate while scrolling.
+ * the comment's top corner (the end side), fading in and out with the vote; post
+ * cards too (#173). A still gradient, drawn: nothing to lay out or animate while
+ * scrolling.
  */
 @Composable
-private fun Modifier.voteGlow(color: Color?, rtl: Boolean, fadeTop: Boolean = false): Modifier {
+internal fun Modifier.voteGlow(color: Color?, rtl: Boolean, fadeTop: Boolean = false): Modifier {
     var last by remember { mutableStateOf(color ?: Color.Transparent) }
     if (color != null) last = color
     val shown by animateFloatAsState(if (color != null) 1f else 0f, tween(350), label = "voteGlow")
@@ -1803,15 +1848,34 @@ private fun calmIndent(depth: Int) = 16.dp + CalmRailStep * depth.coerceIn(0, 8)
 private class CalmRails(val depth: Int, val prev: Int, val next: Int)
 
 /**
+ * Draws a row's [rails]: one line per ancestor, joined row to row (#166). On what the
+ * row's content draws, not the row: a swipe slides the comment over a background that
+ * would hide them, and the lines go with it (#175). Drawn, not laid out (no extra
+ * layout pass per depth).
+ */
+private fun Modifier.calmRails(rails: CalmRails) = drawBehind {
+    val w = 2.5.dp.toPx()
+    val inset = 6.dp.toPx() // where a line starts or stops, so its round end shows
+    for (l in 0 until rails.depth.coerceAtMost(8)) {
+        val x = (CalmRailStep * (l + 1)).toPx()
+        val cx = if (layoutDirection == LayoutDirection.Rtl) size.width - x else x
+        // A line starts on its first reply and stops on the last one under it.
+        val top = if (rails.prev <= l) inset else -w
+        val bottom = if (rails.next <= l) size.height - inset else size.height + w
+        // A soft colour per depth, as the cards style's edges (#166).
+        drawLine(railColors[l % railColors.size], Offset(cx, top), Offset(cx, bottom), w, StrokeCap.Round)
+    }
+}
+
+/**
  * One row of a Calm thread container (surfaceContainerLow, radius 24, 12dp
  * side margin): [first] rounds the top and adds the container's top inset,
- * [last] rounds the bottom and leaves the 10dp gap to the next thread. It
- * draws the row's [rails]: one line per ancestor, joined row to row (#166).
+ * [last] rounds the bottom and leaves the 10dp gap to the next thread. Its
+ * content draws the rails ([calmRails]).
  */
 @Composable
-private fun CalmThreadRow(first: Boolean, last: Boolean, highlighted: Boolean, rails: CalmRails, content: @Composable () -> Unit) {
+private fun CalmThreadRow(first: Boolean, last: Boolean, highlighted: Boolean, content: @Composable () -> Unit) {
     val cs = MaterialTheme.colorScheme
-    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     val shape = RoundedCornerShape(
         topStart = if (first) CalmRadius else 0.dp,
         topEnd = if (first) CalmRadius else 0.dp,
@@ -1825,21 +1889,7 @@ private fun CalmThreadRow(first: Boolean, last: Boolean, highlighted: Boolean, r
             .clip(shape)
             .background(com.bennybar.luli_for_reddit.feature.feed.calmCardColor())
             .padding(top = if (first) 6.dp else 0.dp, bottom = if (last) 6.dp else 0.dp)
-            .then(if (highlighted) Modifier.background(cs.primaryContainer) else Modifier)
-            // Drawn, not laid out (no extra layout pass per depth).
-            .drawBehind {
-                val w = 2.5.dp.toPx()
-                val inset = 6.dp.toPx() // where a line starts or stops, so its round end shows
-                for (l in 0 until rails.depth.coerceAtMost(8)) {
-                    val x = (CalmRailStep * (l + 1)).toPx()
-                    val cx = if (rtl) size.width - x else x
-                    // A line starts on its first reply and stops on the last one under it.
-                    val top = if (rails.prev <= l) inset else -w
-                    val bottom = if (rails.next <= l) size.height - inset else size.height + w
-                    // A soft colour per depth, as the cards style's edges (#166).
-                    drawLine(railColors[l % railColors.size], Offset(cx, top), Offset(cx, bottom), w, StrokeCap.Round)
-                }
-            },
+            .then(if (highlighted) Modifier.background(cs.primaryContainer) else Modifier),
     ) { content() }
 }
 
@@ -1852,6 +1902,7 @@ private fun CalmThreadRow(first: Boolean, last: Boolean, highlighted: Boolean, r
 @Composable
 private fun CalmCommentRow(
     comment: Comment,
+    rails: CalmRails,
     isNew: Boolean,
     isOwn: Boolean,
     opAuthor: String,
@@ -1896,7 +1947,8 @@ private fun CalmCommentRow(
         Column(
             Modifier
                 .fillMaxWidth()
-                // The rails are the thread row's (CalmThreadRow); this marks your vote.
+                .calmRails(rails)
+                // This marks your vote.
                 .drawBehind {
                     val w = 2.dp.toPx()
                     val top = 10.dp.toPx()
