@@ -84,6 +84,22 @@ struct PostHeaderView: View {
                 .font(.headline)
                 .padding(.top, 16)
                 .padding(.bottom, 10)
+            // Contest mode (#204): why the order looks random and the scores are missing.
+            if post.contestMode {
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Contest mode is on").font(.subheadline.weight(.semibold))
+                        Text("Comments are in random order, and their scores are hidden from everyone but the moderators")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                } icon: {
+                    Image(systemName: "trophy").foregroundStyle(.tint)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 14))
+                .padding(.bottom, 10)
+            }
         }
         .padding(.horizontal, 12)
         .padding(.top, 4)
@@ -181,8 +197,18 @@ struct PostHeaderView: View {
                 segment("arrow.up", value: compactNumber(score), valueTint: down ? votes.down : nil, label: "Upvote", on: up, tint: votes.up, leading: 20, trailing: 6) { vote(1) }
                 segment("arrow.down", label: "Downvote", on: down, tint: votes.down, leading: 6, trailing: 20) { vote(-1) }
             }
-            segment("bubble.left", value: compactNumber(numComments), label: "Comments", on: false, tint: .primary, leading: 20, trailing: 20) {}
-                .padding(.leading, 8)
+            // The count only, as on Android: a pill that looked tappable but did nothing.
+            HStack(spacing: 6) {
+                Image(systemName: "bubble.left")
+                Text(verbatim: compactNumber(numComments)).monospacedDigit()
+            }
+            .font(.subheadline.weight(.medium))
+            .padding(.horizontal, 13)
+            .frame(height: 40)
+            .glassEffect(.regular, in: .capsule)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(compactNumber(numComments)) comments")
+            .padding(.leading, 8)
             Spacer(minLength: 0)
             if !translate.targets.isEmpty {
                 TranslateButton(targets: translate.targets, shownIn: translate.shownIn, busy: translate.busy, onPick: translate.onPick)
@@ -445,9 +471,13 @@ struct PollOptionsView: View {
 /// as comments do: they used to show as bare links.
 private struct PostBodyView: View {
     let post: Post
+    /// A spoiler's text stays covered until tapped (#204), as on reddit.com.
+    @State private var shown = false
 
     var body: some View {
-        if !post.selftext.isEmpty {
+        if !post.selftext.isEmpty, post.spoiler, !shown {
+            SpoilerTextCover { shown = true }
+        } else if !post.selftext.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(Array(bodySegments(post.selftext, post.bodyMedia, CommentBody.maxPostMedia).enumerated()), id: \.offset) { _, segment in
                     switch segment {

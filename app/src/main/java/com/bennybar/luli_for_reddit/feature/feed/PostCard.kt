@@ -1,5 +1,7 @@
 package com.bennybar.luli_for_reddit.feature.feed
 
+import androidx.compose.material.icons.outlined.VisibilityOff
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.graphics.RectangleShape
 import com.bennybar.luli_for_reddit.ui.subredditName
 import androidx.compose.foundation.text.InlineTextContent
@@ -71,6 +73,7 @@ import com.bennybar.luli_for_reddit.feature.media.shareAsMedia
 import com.bennybar.luli_for_reddit.feature.media.canShareAsMedia
 import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.rounded.LocalFireDepartment
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.Icon
@@ -435,6 +438,11 @@ fun PostCard(listed: Post, modifier: Modifier = Modifier, swipeOverride: Pair<Sw
     }
 }
 
+// Trending gets a fire icon instead of an emoji in the text (#208). Posts cached
+// before 2.0.91 still carry "🔥 Trending on Reddit", so the callers drop it.
+private fun reasonIcon(reason: String) =
+    if (reason.endsWith("Trending on Reddit")) Icons.Rounded.LocalFireDepartment else Icons.Outlined.Info
+
 @Composable
 private fun ReasonRow(reason: String, onTune: () -> Unit) {
     val cs = MaterialTheme.colorScheme
@@ -445,10 +453,10 @@ private fun ReasonRow(reason: String, onTune: () -> Unit) {
             .padding(start = 18.dp, top = 2.dp, end = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.Outlined.Info, null, Modifier.size(13.dp), tint = cs.primary)
+        Icon(reasonIcon(reason), null, Modifier.size(13.dp), tint = cs.primary)
         Spacer(Modifier.width(6.dp))
         Text(
-            reason,
+            reason.removePrefix("🔥 "),
             Modifier.weight(1f),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -492,7 +500,7 @@ private fun LargeCard(p: Post, a: PostActions, s: Settings, dim: Modifier, glow:
             Spacer(Modifier.height(12.dp))
             Media(p, a, s)
             PollOptions(p)
-            if (p.snippet.isNotEmpty()) {
+            if (p.snippet.isNotEmpty()) SpoilerOr(p) {
                 Spacer(Modifier.height(4.dp))
                 Text(
                     p.snippet,
@@ -533,7 +541,7 @@ private fun CardsCard(p: Post, a: PostActions, s: Settings, dim: Modifier, glow:
             Spacer(Modifier.height(12.dp))
             BannerMedia(p, a, s, 180.dp)
             PollOptions(p)
-            if (p.snippet.isNotEmpty()) {
+            if (p.snippet.isNotEmpty()) SpoilerOr(p) {
                 Spacer(Modifier.height(4.dp))
                 Text(
                     p.snippet,
@@ -1238,6 +1246,34 @@ private fun CalmCardsCard(p: Post, a: PostActions, s: Settings, dim: Modifier, g
     }
 }
 
+/** A spoiler post's text in a feed (#204): covered, as reddit.com's; a tap shows it. */
+@Composable
+private fun SpoilerOr(p: Post, content: @Composable () -> Unit) {
+    if (!p.spoiler) return content()
+    var shown by rememberSaveable(p.id) { mutableStateOf(false) }
+    if (shown) content() else SpoilerTextCover(Modifier.padding(top = 6.dp, end = 6.dp)) { shown = true }
+}
+
+/** Where a spoiler's text would be (#204): "Spoiler · tap to view", in its own rounded box. */
+@Composable
+internal fun SpoilerTextCover(modifier: Modifier = Modifier, onReveal: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    Row(
+        modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(cs.surfaceContainerHighest)
+            .clickable(onClickLabel = "Show spoiler", onClick = onReveal)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        Icon(Icons.Outlined.VisibilityOff, null, Modifier.size(18.dp), tint = cs.onSurfaceVariant)
+        Spacer(Modifier.width(8.dp))
+        Text("Spoiler · tap to view", style = MaterialTheme.typography.labelLarge, color = cs.onSurfaceVariant)
+    }
+}
+
 /** How many lines of a post's text a card shows: Settings' choice (#186), else the layout's [own]. */
 private fun Settings.textLines(own: Int) = if (postTextLines > 0) postTextLines else own
 
@@ -1263,7 +1299,7 @@ private fun CalmBody(p: Post, a: PostActions, s: Settings, mediaShape: androidx.
         Spacer(Modifier.height(10.dp))
         PollOptions(p)
     }
-    if (p.snippet.isNotEmpty()) {
+    if (p.snippet.isNotEmpty()) SpoilerOr(p) {
         Text(
             p.snippet,
             Modifier.padding(top = 6.dp).readDim(),
@@ -1391,10 +1427,10 @@ private fun CalmHeader(p: Post, a: PostActions, s: Settings) {
                 // post's age (kept visible when the reason is long). Tap → the
                 // "why you're seeing this" / tune sheet.
                 Row(Modifier.clickable(onClick = a::tune), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Outlined.Info, null, Modifier.size(13.dp), tint = cs.primary)
+                    Icon(reasonIcon(reason), null, Modifier.size(13.dp), tint = cs.primary)
                     Spacer(Modifier.width(4.dp))
                     Text(
-                        reason,
+                        reason.removePrefix("🔥 "),
                         Modifier.weight(1f, fill = false),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium,
