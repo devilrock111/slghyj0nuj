@@ -603,7 +603,7 @@ private fun cardImg(p: Post, s: Settings): String? {
 /** The image URL a full-width card shows (shared with the list's prefetcher). */
 fun feedImageUrl(p: Post, s: Settings): String? = cardImg(p, s) ?: p.gallery.firstOrNull()?.url
 
-internal fun blurOf(p: Post, s: Settings) = (p.over18 && s.blurNsfw) || p.spoiler
+internal fun blurOf(p: Post, s: Settings) = if (s.neverBlurMedia) false else (p.over18 && s.blurNsfw) || p.spoiler
 internal fun blurLabel(p: Post, s: Settings) = if (p.over18 && s.blurNsfw) "NSFW" else "Spoiler"
 
 /** Full-width media for the "Cards" layout, cover-cropped to [height]. */

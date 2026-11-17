@@ -219,6 +219,7 @@ data class Settings(
     val customSeedColor: Long? = null, // ARGB: the last colour picked with "Custom" (#84), kept for its swatch
     val blurNsfw: Boolean = true,
     val miniThumbDirectFullscreen: Boolean = false,
+    val neverBlurMedia: Boolean = false,
     val defaultSort: PostSort = PostSort.BEST,
     val subredditSorts: Map<String, SubredditSort> = emptyMap(), // by lowercase name; overrides defaultSort there
     val defaultCommentSort: String = "confidence", // reddit comment sort id

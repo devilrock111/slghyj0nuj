@@ -1402,7 +1402,7 @@ private fun PostMedia(p: Post, nav: AppNavigator, radius: androidx.compose.ui.un
     if (p.type == PostType.SELF) return
     val cs = MaterialTheme.colorScheme
     val blurNsfw by app.settings.state.collectAsState()
-    val blur = (p.over18 && blurNsfw.blurNsfw) || p.spoiler
+    val blur = if (blurNsfw.neverBlurMedia) false else (p.over18 && blurNsfw.blurNsfw) || p.spoiler
     val label = if (p.over18) "NSFW" else "Spoiler"
     if (p.type == PostType.GALLERY && p.gallery.isNotEmpty()) {
         NsfwBlur(blur, Modifier.padding(bottom = 12.dp), label = label) {

@@ -58,6 +58,7 @@ class SettingsStore(private val p: Prefs) {
             customSeedColor = p.getLong("customSeedColor")?.and(0xFFFFFFFFL),
             blurNsfw = b("blurNsfw", d.blurNsfw),
             miniThumbDirectFullscreen = b("miniThumbDirectFullscreen", d.miniThumbDirectFullscreen),
+            neverBlurMedia = b("neverBlurMedia", d.neverBlurMedia),
             defaultSort = idx(PostSort.entries.toTypedArray(), "defaultSort", d.defaultSort),
             subredditSorts = p.getStringList("subredditSorts").orEmpty().mapNotNull { row ->
                 val parts = row.split('|')
@@ -154,6 +155,7 @@ class SettingsStore(private val p: Prefs) {
     }
     fun setBlurNsfw(v: Boolean) { p.setBool("blurNsfw", v); set { it.copy(blurNsfw = v) } }
     fun setMiniThumbDirectFullscreen(v: Boolean) { p.setBool("miniThumbDirectFullscreen", v); set { it.copy(miniThumbDirectFullscreen = v) } }
+    fun setNeverBlurMedia(v: Boolean) { p.setBool("neverBlurMedia", v); set { it.copy(neverBlurMedia = v) } }
     fun setDefaultSort(v: PostSort) { p.setInt("defaultSort", v.ordinal); set { it.copy(defaultSort = v) } }
     /** [v] null: [name] goes back to following the default sort. */
     fun setSubredditSort(name: String, v: SubredditSort?) {
