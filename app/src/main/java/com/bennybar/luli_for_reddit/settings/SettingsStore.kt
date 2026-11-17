@@ -111,6 +111,7 @@ class SettingsStore(private val p: Prefs) {
             threadJumpOp = b("threadJumpOp", d.threadJumpOp),
             threadJumpMine = b("threadJumpMine", d.threadJumpMine),
             threadJumpNext = b("threadJumpNext", d.threadJumpNext),
+            threadButtonsHideOnScroll = b("threadButtonsHideOnScroll", d.threadButtonsHideOnScroll),
             topBarMode = p.getInt("topBarMode")?.let {
                 TopBarMode.entries[it.coerceIn(0, TopBarMode.entries.size - 1)]
             } ?: d.topBarMode,
@@ -276,6 +277,7 @@ class SettingsStore(private val p: Prefs) {
     fun setThreadJumpOp(v: Boolean) { p.setBool("threadJumpOp", v); set { it.copy(threadJumpOp = v) } }
     fun setThreadJumpMine(v: Boolean) { p.setBool("threadJumpMine", v); set { it.copy(threadJumpMine = v) } }
     fun setThreadJumpNext(v: Boolean) { p.setBool("threadJumpNext", v); set { it.copy(threadJumpNext = v) } }
+    fun setThreadButtonsHideOnScroll(v: Boolean) { p.setBool("threadButtonsHideOnScroll", v); set { it.copy(threadButtonsHideOnScroll = v) } }
     fun setTopBarMode(v: TopBarMode) { p.setInt("topBarMode", v.ordinal); set { it.copy(topBarMode = v) } }
     /** [entries] null: back to the default panel (and whatever buttons later versions add to it). */
     fun setTopBarMenu(mode: TopBarMode, entries: List<TopBarMenuEntry>?) {
