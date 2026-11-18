@@ -2196,9 +2196,11 @@ private fun ContestNotice() {
 @Composable
 private fun PostBody(p: Post) {
     if (p.selftext.isEmpty()) return
-    // A spoiler's text stays covered until tapped (#204), as on reddit.com.
+    // A spoiler's text stays covered until tapped (#204), as on reddit.com —
+    // unless "Never blur media" is on, which shows it directly.
+    val settings by app.settings.state.collectAsState()
     var shown by rememberSaveable(p.id) { mutableStateOf(!p.spoiler) }
-    if (!shown) return com.bennybar.luli_for_reddit.feature.feed.SpoilerTextCover { shown = true }
+    if (!shown && !settings.neverBlurMedia) return com.bennybar.luli_for_reddit.feature.feed.SpoilerTextCover { shown = true }
     BodyWithMedia(p.selftext, p.bodyMedia, LocalNavigator.current, maxMedia = 10, selectable = true)
 }
 

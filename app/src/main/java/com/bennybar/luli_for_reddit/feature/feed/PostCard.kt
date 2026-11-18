@@ -500,7 +500,7 @@ private fun LargeCard(p: Post, a: PostActions, s: Settings, dim: Modifier, glow:
             Spacer(Modifier.height(12.dp))
             Media(p, a, s)
             PollOptions(p)
-            if (p.snippet.isNotEmpty()) SpoilerOr(p) {
+            if (p.snippet.isNotEmpty()) SpoilerOr(p, s) {
                 Spacer(Modifier.height(4.dp))
                 Text(
                     p.snippet,
@@ -541,7 +541,7 @@ private fun CardsCard(p: Post, a: PostActions, s: Settings, dim: Modifier, glow:
             Spacer(Modifier.height(12.dp))
             BannerMedia(p, a, s, 180.dp)
             PollOptions(p)
-            if (p.snippet.isNotEmpty()) SpoilerOr(p) {
+            if (p.snippet.isNotEmpty()) SpoilerOr(p, s) {
                 Spacer(Modifier.height(4.dp))
                 Text(
                     p.snippet,
@@ -1248,8 +1248,8 @@ private fun CalmCardsCard(p: Post, a: PostActions, s: Settings, dim: Modifier, g
 
 /** A spoiler post's text in a feed (#204): covered, as reddit.com's; a tap shows it. */
 @Composable
-private fun SpoilerOr(p: Post, content: @Composable () -> Unit) {
-    if (!p.spoiler) return content()
+private fun SpoilerOr(p: Post, s: Settings, content: @Composable () -> Unit) {
+    if (!p.spoiler || s.neverBlurMedia) return content()
     var shown by rememberSaveable(p.id) { mutableStateOf(false) }
     if (shown) content() else SpoilerTextCover(Modifier.padding(top = 6.dp, end = 6.dp)) { shown = true }
 }
@@ -1299,7 +1299,7 @@ private fun CalmBody(p: Post, a: PostActions, s: Settings, mediaShape: androidx.
         Spacer(Modifier.height(10.dp))
         PollOptions(p)
     }
-    if (p.snippet.isNotEmpty()) SpoilerOr(p) {
+    if (p.snippet.isNotEmpty()) SpoilerOr(p, s) {
         Text(
             p.snippet,
             Modifier.padding(top = 6.dp).readDim(),
