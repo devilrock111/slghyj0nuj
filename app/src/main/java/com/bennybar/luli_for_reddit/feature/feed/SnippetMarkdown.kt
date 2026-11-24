@@ -16,9 +16,9 @@ import com.bennybar.luli_for_reddit.model.Post
 
 /** [Post.snippet] drawn, worked out once per post (and theme). */
 @Composable
-fun rememberSnippet(p: Post): AnnotatedString {
+fun rememberSnippet(p: Post, revealSpoilers: Boolean = false): AnnotatedString {
     val cover = MaterialTheme.colorScheme.onSurfaceVariant
-    return remember(p.snippet, cover) { snippetMarkdown(p.snippet, cover) }
+    return remember(p.snippet, cover, revealSpoilers) { snippetMarkdown(p.snippet, cover, revealSpoilers) }
 }
 
 /**
@@ -27,7 +27,7 @@ fun rememberSnippet(p: Post): AnnotatedString {
  * `**` and `>!` showing; links as their words, headings bold, quote marks dropped.
  * Not the thread's full markdown: a cheap pass for a few lines. Pure, so it's tested.
  */
-fun snippetMarkdown(text: String, spoiler: Color): AnnotatedString = buildAnnotatedString {
+fun snippetMarkdown(text: String, spoiler: Color, revealSpoilers: Boolean = false): AnnotatedString = buildAnnotatedString {
     val decoded = text.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
     decoded.split('\n').forEachIndexed { n, raw ->
         if (n > 0) append('\n')
@@ -36,11 +36,11 @@ fun snippetMarkdown(text: String, spoiler: Color): AnnotatedString = buildAnnota
         if (heading != null) line = line.substring(heading.range.last + 1)
         // A quote's "> " (not a spoiler's ">!").
         while (line.startsWith(">") && !line.startsWith(">!")) line = line.removePrefix(">").trimStart()
-        if (heading != null) withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { inline(line, spoiler) } else inline(line, spoiler)
+        if (heading != null) withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { inline(line, spoiler, revealSpoilers) } else inline(line, spoiler, revealSpoilers)
     }
 }
 
-private fun AnnotatedString.Builder.inline(s: String, spoiler: Color) {
+private fun AnnotatedString.Builder.inline(s: String, spoiler: Color, revealSpoilers: Boolean = false) {
     var i = 0
     fun closing(token: String, from: Int): Int {
         val end = s.indexOf(token, from)
@@ -53,7 +53,11 @@ private fun AnnotatedString.Builder.inline(s: String, spoiler: Color) {
             s.startsWith(">!", i) -> {
                 val end = s.indexOf("!<", i + 2)
                 if (end > i + 2) {
-                    withStyle(SpanStyle(color = spoiler, background = spoiler)) { inline(s.substring(i + 2, end), spoiler) }
+                    if (revealSpoilers) {
+                        inline(s.substring(i + 2, end), spoiler, revealSpoilers)
+                    } else {
+                        withStyle(SpanStyle(color = spoiler, background = spoiler)) { inline(s.substring(i + 2, end), spoiler, revealSpoilers) }
+                    }
                     i = end + 2; continue
                 }
             }
@@ -62,7 +66,7 @@ private fun AnnotatedString.Builder.inline(s: String, spoiler: Color) {
                 val end = closing(token, i + 2)
                 if (end > 0) {
                     val style = if (token == "~~") SpanStyle(textDecoration = TextDecoration.LineThrough) else SpanStyle(fontWeight = FontWeight.Bold)
-                    withStyle(style) { inline(s.substring(i + 2, end), spoiler) }
+                    withStyle(style) { inline(s.substring(i + 2, end), spoiler, revealSpoilers) }
                     i = end + 2; continue
                 }
             }
@@ -77,14 +81,14 @@ private fun AnnotatedString.Builder.inline(s: String, spoiler: Color) {
             c == '*' || (c == '_' && (i == 0 || !s[i - 1].isLetterOrDigit())) -> {
                 val end = closing(c.toString(), i + 1)
                 if (end > 0 && (c == '*' || end + 1 >= s.length || !s[end + 1].isLetterOrDigit())) {
-                    withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { inline(s.substring(i + 1, end), spoiler) }
+                    withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { inline(s.substring(i + 1, end), spoiler, revealSpoilers) }
                     i = end + 1; continue
                 }
             }
             c == '[' -> {
                 val mid = s.indexOf("](", i + 1)
                 val end = if (mid > i) s.indexOf(')', mid + 2) else -1
-                if (end > 0) { inline(s.substring(i + 1, mid), spoiler); i = end + 1; continue }
+                if (end > 0) { inline(s.substring(i + 1, mid), spoiler, revealSpoilers); i = end + 1; continue }
             }
         }
         append(c)
