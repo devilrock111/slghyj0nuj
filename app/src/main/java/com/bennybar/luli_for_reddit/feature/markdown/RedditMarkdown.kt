@@ -81,6 +81,9 @@ fun RedditMarkdown(
     maxLines: Int = Int.MAX_VALUE,
     selectable: Boolean = false,
     onLinkClick: ((String) -> Unit)? = null,
+    // "Show all hidden content": `>!spoiler!<` spans render as plain text,
+    // with no tap-to-reveal cover.
+    revealSpoilers: Boolean = false,
 ) {
     val doc = remember(text) { RedditMarkdownParser.parse(text) }
     val nav = LocalNavigator.current
@@ -104,6 +107,7 @@ fun RedditMarkdown(
         border = cs.outlineVariant,
         headings = listOf(typo.headlineSmall, typo.titleLarge, typo.titleMedium, typo.bodyLarge, typo.bodyLarge, typo.bodyLarge),
         revealed = revealed,
+        revealSpoilers = revealSpoilers,
         onReveal = { revealed = revealed + it },
         onLink = onLink,
     )
@@ -111,7 +115,7 @@ fun RedditMarkdown(
     if (maxLines != Int.MAX_VALUE) {
         // Previews: one text block, ellipsized.
         val flat = remember(doc) { flattenInlines(doc.blocks) }
-        val s = remember(flat, revealed, textColor, cs.primary, fontSize) { ctx.annotate(flat) }
+        val s = remember(flat, revealed, revealSpoilers, textColor, cs.primary, fontSize) { ctx.annotate(flat) }
         Text(
             s,
             modifier,
@@ -164,12 +168,13 @@ private class MdContext(
     val border: Color,
     val headings: List<TextStyle>,
     val revealed: Set<Int>,
+    val revealSpoilers: Boolean,
     val onReveal: (Int) -> Unit,
     val onLink: (String) -> Unit,
 ) {
     fun withColor(c: Color) = MdContext(
         base.copy(color = c), fontSize, c, link, codeBg, quoteBg, quoteBar, quoteText, spoiler, revealedBg, border,
-        headings, revealed, onReveal, onLink,
+        headings, revealed, revealSpoilers, onReveal, onLink,
     )
 
     fun annotate(inlines: List<MdInline>, size: TextUnit = fontSize): AnnotatedString = buildAnnotatedString {
@@ -182,7 +187,7 @@ private class MdContext(
                 s = s.merge(SpanStyle(fontFamily = FontFamily.Monospace, background = codeBg, fontSize = size * 0.9f))
             }
             if (r.has(MdStyle.SUP)) s = s.merge(SpanStyle(fontSize = size * 0.75f, baselineShift = BaselineShift.Superscript))
-            val hiddenSpoiler = r.spoiler >= 0 && r.spoiler !in revealed
+            val hiddenSpoiler = r.spoiler >= 0 && r.spoiler !in revealed && !revealSpoilers
             when {
                 // Same colour for text and background: a solid block until tapped.
                 hiddenSpoiler -> {
@@ -217,12 +222,12 @@ private fun Blocks(blocks: List<MdBlock>, ctx: MdContext, modifier: Modifier) {
 private fun Block(b: MdBlock, ctx: MdContext) {
     when (b) {
         is MdBlock.Paragraph -> {
-            val s = remember(b, ctx.revealed, ctx.textColor, ctx.link, ctx.fontSize) { ctx.annotate(b.inlines) }
+            val s = remember(b, ctx.revealed, ctx.revealSpoilers, ctx.textColor, ctx.link, ctx.fontSize) { ctx.annotate(b.inlines) }
             Text(s, style = ctx.base)
         }
         is MdBlock.Heading -> {
             val style = ctx.headings[(b.level - 1).coerceIn(0, 5)].copy(color = ctx.textColor)
-            val s = remember(b, ctx.revealed, ctx.textColor, ctx.link, style.fontSize) { ctx.annotate(b.inlines, style.fontSize) }
+            val s = remember(b, ctx.revealed, ctx.revealSpoilers, ctx.textColor, ctx.link, style.fontSize) { ctx.annotate(b.inlines, style.fontSize) }
             Text(s, style = style)
         }
         is MdBlock.Quote -> {
@@ -327,7 +332,7 @@ private fun Table(t: MdBlock.Table, ctx: MdContext) {
 
 @Composable
 private fun Cell(inlines: List<MdInline>, ctx: MdContext, header: Boolean, align: TextAlign) {
-    val s = remember(inlines, ctx.revealed, ctx.textColor, ctx.link, ctx.fontSize) { ctx.annotate(inlines) }
+    val s = remember(inlines, ctx.revealed, ctx.revealSpoilers, ctx.textColor, ctx.link, ctx.fontSize) { ctx.annotate(inlines) }
     Text(
         s,
         Modifier
