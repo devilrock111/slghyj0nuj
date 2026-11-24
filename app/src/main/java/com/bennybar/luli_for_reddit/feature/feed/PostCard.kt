@@ -658,7 +658,7 @@ private fun BannerMedia(p: Post, a: PostActions, s: Settings, height: Dp) {
 @Composable
 private fun Thumb(p: Post, a: PostActions, s: Settings, size: Dp) {
     val cs = MaterialTheme.colorScheme
-    val url = cardImg(p, s) ?: p.gallery.firstOrNull()?.url ?: p.thumbnailUrl ?: p.oembedThumbUrl
+    val url = cardImg(p, s) ?: p.gallery.firstOrNull()?.url ?: p.thumbnailUrl
     val blur = blurOf(p, s)
     val px = with(LocalDensity.current) { size.roundToPx() }
     Box(
