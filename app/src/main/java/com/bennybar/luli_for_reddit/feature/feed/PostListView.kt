@@ -643,7 +643,8 @@ private fun FeedList(
 /**
  * [posts] as the feed list shows them: without posts hidden or dismissed,
  * subreddits hidden from the front page, content filters (Hide NSFW
- * included) and, in For You, read posts when auto-hidden. Browse media
+ * included — unless "Show all hidden content" is on, which lifts it)
+ * and, in For You, read posts when auto-hidden. Browse media
  * (#103) shows the same posts.
  */
 @Composable
@@ -670,7 +671,7 @@ internal fun rememberShownPosts(feedKey: String, posts: List<Post>): List<Post> 
     // A subreddit feed still shows that subreddit's own posts.
     val viewing = if (feedKey.isEmpty() || feedKey.startsWith("m::")) null else feedKey
 
-    return remember(posts, seen, hiddenIds, dismissedIds, hiddenSubs, filters, viewing) {
+    return remember(posts, seen, hiddenIds, dismissedIds, hiddenSubs, filters, settings.forceShowHidden, viewing) {
         var list = posts
         if (seen != null) list = list.filter { !(it.feedReason != null && it.id in seen) }
         // Posts hidden this session (Hide / swipe-to-hide).
@@ -678,7 +679,9 @@ internal fun rememberShownPosts(feedKey: String, posts: List<Post>): List<Post> 
         if (dismissedIds.isNotEmpty()) list = list.filter { it.id !in dismissedIds }
         if (hiddenSubs.isNotEmpty()) list = list.filter { it.subreddit.lowercase() !in hiddenSubs }
         // User content filters (keywords / domains / flairs / subreddits).
-        if (!filters.isEmpty) list = list.filter { !filters.hides(it, viewingSubreddit = viewing) }
+        // "Show all hidden content" lifts the Hide-NSFW part, so NSFW posts
+        // show in the feed instead of being filtered out.
+        if (!filters.isEmpty) list = list.filter { !filters.hides(it, viewingSubreddit = viewing, showNsfw = settings.forceShowHidden) }
         // A page boundary can repeat a post that moved up meanwhile; the list
         // needs unique keys.
         list.distinctBy { it.id }
