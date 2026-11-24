@@ -79,8 +79,6 @@ data class Post(
     val previewUrl: String? = null,
     val previewMedUrl: String? = null, // smaller resolution for feed cards
     val blurredPreviewUrl: String? = null, // reddit's pre-blurred NSFW/spoiler variant
-    /** Embed thumbnail (`media.oembed.thumbnail_url`, e.g. YouTube / Instagram / RedGifs): last-resort minicard thumbnail when Reddit gives no preview image. */
-    val oembedThumbUrl: String? = null,
     val previewWidth: Int? = null,
     val previewHeight: Int? = null,
     val hlsUrl: String? = null,
@@ -189,7 +187,6 @@ data class Post(
                 previewUrl = preview?.url,
                 previewMedUrl = medPreviewUrl(d) ?: medPreviewUrl(content) ?: preview?.url,
                 blurredPreviewUrl = blurredPreviewUrl(d) ?: blurredPreviewUrl(content),
-                oembedThumbUrl = oembedThumb(d) ?: oembedThumb(content),
                 previewWidth = preview?.width,
                 previewHeight = preview?.height,
                 hlsUrl = redditVideo?.get("hls_url").str()
@@ -248,15 +245,6 @@ data class Post(
             }
             return v["source"]["url"].str()
         }
-
-        /**
-         * An embed's own thumbnail (`media.oembed.thumbnail_url`, e.g. YouTube /
-         * Instagram / RedGifs): the last resort for the minicard thumbnail when
-         * Reddit supplies no preview image and the thumbnail is just "nsfw".
-         */
-        private fun oembedThumb(d: JsonElement): String? =
-            d["media"]["oembed"]["thumbnail_url"].str()?.replace("&amp;", "&")
-                ?: d["secure_media"]["oembed"]["thumbnail_url"].str()?.replace("&amp;", "&")
 
         /** ~The smallest preview >= 640px wide, else the largest. Resolutions are ascending. */
         private fun medPreviewUrl(d: JsonElement): String? {
