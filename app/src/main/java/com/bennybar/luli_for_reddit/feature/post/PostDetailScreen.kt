@@ -1732,7 +1732,7 @@ private fun CommentTile(
                     // heavier to build while scrolling through hundreds of
                     // comments (and swallows taps for tap-to-collapse).
                     // "Copy text" is in the ⋯ menu.
-                    ScaledText(TextKind.COMMENT) { BodyWithMedia(comment.body, comment.media, nav, maxMedia = 3) }
+                    ScaledText(TextKind.COMMENT) { BodyWithMedia(comment.body, comment.media, nav, maxMedia = 3, revealSpoilers = settings.forceShowHidden) }
                 }
                 if (!buttonsOnTap) {
                     CommentActionsRow(comment, isOwn, actions)
@@ -2201,7 +2201,7 @@ private fun CalmCommentRow(
                     .padding(top = 4.dp)
                     .then(commentBodyTap(tapToCollapse, buttonsOnTap, revealOnLongPress, toggle, reveal)),
             ) {
-                ScaledText(TextKind.COMMENT) { BodyWithMedia(comment.body, comment.media, nav, maxMedia = 3) }
+                ScaledText(TextKind.COMMENT) { BodyWithMedia(comment.body, comment.media, nav, maxMedia = 3, revealSpoilers = settings.forceShowHidden) }
             }
             // ↑ score ↓ · Reply · Collapse · ⋯ — small, 32dp targets. Deep in a thread the row
             // is narrow: the words go, the icons stay, so ⋯ (Edit, Delete…) isn't pushed off
@@ -2337,7 +2337,7 @@ private fun PostBody(p: Post) {
     val settings by app.settings.state.collectAsState()
     var shown by rememberSaveable(p.id) { mutableStateOf(!p.spoiler) }
     if (!shown && !settings.forceShowHidden) return com.bennybar.luli_for_reddit.feature.feed.SpoilerTextCover { shown = true }
-    ScaledText(TextKind.POST_TEXT) { BodyWithMedia(p.selftext, p.bodyMedia, LocalNavigator.current, maxMedia = 10, selectable = true) }
+    ScaledText(TextKind.POST_TEXT) { BodyWithMedia(p.selftext, p.bodyMedia, LocalNavigator.current, maxMedia = 10, selectable = true, revealSpoilers = settings.forceShowHidden) }
 }
 
 /**
@@ -2346,11 +2346,11 @@ private fun PostBody(p: Post) {
  * shows as that media, not as the link).
  */
 @Composable
-private fun BodyWithMedia(body: String, media: Map<String, String>, nav: AppNavigator, maxMedia: Int, selectable: Boolean = false) {
+private fun BodyWithMedia(body: String, media: Map<String, String>, nav: AppNavigator, maxMedia: Int, selectable: Boolean = false, revealSpoilers: Boolean = false) {
     val segments = remember(body, media) { bodySegments(body, media, maxMedia) }
     for (seg in segments) {
         when (seg) {
-            is BodySegment.Text -> RedditMarkdown(seg.markdown, selectable = selectable)
+            is BodySegment.Text -> RedditMarkdown(seg.markdown, selectable = selectable, revealSpoilers = revealSpoilers)
             is BodySegment.Media -> CommentMedia("", listOf(seg.uri), nav, max = 1)
         }
     }
