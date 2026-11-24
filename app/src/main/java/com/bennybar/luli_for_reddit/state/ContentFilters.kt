@@ -36,9 +36,11 @@ data class ContentFilters(
     /**
      * Whether [p] is hidden. A filtered subreddit still shows on its own page
      * ([viewingSubreddit]) — the filter keeps it out of everything else.
+     * [showNsfw] (Settings › Show all hidden content) lifts only the
+     * Hide-NSFW part: NSFW posts show instead of being filtered out.
      */
-    fun hides(p: Post, viewingSubreddit: String? = null): Boolean {
-        if (hideNsfw && p.over18) return true
+    fun hides(p: Post, viewingSubreddit: String? = null, showNsfw: Boolean = false): Boolean {
+        if (hideNsfw && !showNsfw && p.over18) return true
         val sub = p.subreddit.lowercase()
         if (sub in subreddits && viewingSubreddit?.lowercase() != sub) return true
         if (keywordRegex?.containsMatchIn(p.title) == true) return true
