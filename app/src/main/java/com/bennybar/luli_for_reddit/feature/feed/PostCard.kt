@@ -504,7 +504,7 @@ private fun LargeCard(p: Post, a: PostActions, s: Settings, dim: Modifier, glow:
             if (p.snippet.isNotEmpty()) SpoilerOr(p, s) {
                 Spacer(Modifier.height(4.dp))
                 ScaledText(TextKind.POST_TEXT) { Text(
-                    rememberSnippet(p),
+                    rememberSnippet(p, s.forceShowHidden),
                     Modifier.readDim(),
                         maxLines = s.textLines(3),
                     overflow = TextOverflow.Ellipsis,
@@ -545,7 +545,7 @@ private fun CardsCard(p: Post, a: PostActions, s: Settings, dim: Modifier, glow:
             if (p.snippet.isNotEmpty()) SpoilerOr(p, s) {
                 Spacer(Modifier.height(4.dp))
                 ScaledText(TextKind.POST_TEXT) { Text(
-                    rememberSnippet(p),
+                    rememberSnippet(p, s.forceShowHidden),
                     Modifier.readDim(),
                         maxLines = s.textLines(2),
                     overflow = TextOverflow.Ellipsis,
@@ -1303,7 +1303,7 @@ private fun CalmBody(p: Post, a: PostActions, s: Settings, mediaShape: androidx.
     }
     if (p.snippet.isNotEmpty()) SpoilerOr(p, s) {
         ScaledText(TextKind.POST_TEXT) { Text(
-            rememberSnippet(p),
+            rememberSnippet(p, s.forceShowHidden),
             Modifier.padding(top = 6.dp).readDim(),
             maxLines = s.textLines(2),
             overflow = TextOverflow.Ellipsis,
