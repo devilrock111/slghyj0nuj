@@ -501,7 +501,7 @@ private fun LargeCard(p: Post, a: PostActions, s: Settings, dim: Modifier, glow:
             Spacer(Modifier.height(12.dp))
             Media(p, a, s)
             PollOptions(p)
-            if (p.snippet.isNotEmpty()) SpoilerOr(p) {
+            if (p.snippet.isNotEmpty()) SpoilerOr(p, s) {
                 Spacer(Modifier.height(4.dp))
                 ScaledText(TextKind.POST_TEXT) { Text(
                     rememberSnippet(p),
@@ -542,7 +542,7 @@ private fun CardsCard(p: Post, a: PostActions, s: Settings, dim: Modifier, glow:
             Spacer(Modifier.height(12.dp))
             BannerMedia(p, a, s, 180.dp)
             PollOptions(p)
-            if (p.snippet.isNotEmpty()) SpoilerOr(p) {
+            if (p.snippet.isNotEmpty()) SpoilerOr(p, s) {
                 Spacer(Modifier.height(4.dp))
                 ScaledText(TextKind.POST_TEXT) { Text(
                     rememberSnippet(p),
@@ -604,7 +604,7 @@ private fun cardImg(p: Post, s: Settings): String? {
 /** The image URL a full-width card shows (shared with the list's prefetcher). */
 fun feedImageUrl(p: Post, s: Settings): String? = cardImg(p, s) ?: p.gallery.firstOrNull()?.url
 
-internal fun blurOf(p: Post, s: Settings) = (p.over18 && s.blurNsfw) || p.spoiler
+internal fun blurOf(p: Post, s: Settings) = !s.forceShowHidden && ((p.over18 && s.blurNsfw) || p.spoiler)
 internal fun blurLabel(p: Post, s: Settings) = if (p.over18 && s.blurNsfw) "NSFW" else "Spoiler"
 
 /** Full-width media for the "Cards" layout, cover-cropped to [height]. */
@@ -670,7 +670,7 @@ private fun Thumb(p: Post, a: PostActions, s: Settings, size: Dp) {
             // other layouts (a link opens the link); the rest of the card opens the
             // post (#104). Blurred (NSFW/spoiler) ones keep opening the post, so a
             // tap never shows them uncovered.
-            .then(if (blur) Modifier else Modifier.clickable(onClickLabel = "Open media", onClick = a::openMedia)),
+            .then(if (blur && !s.miniThumbDirectFullscreen) Modifier else Modifier.clickable(onClickLabel = "Open media", onClick = a::openMedia)),
         contentAlignment = Alignment.Center,
     ) {
         if (url != null && !blur) {
@@ -1250,8 +1250,8 @@ private fun CalmCardsCard(p: Post, a: PostActions, s: Settings, dim: Modifier, g
 
 /** A spoiler post's text in a feed (#204): covered, as reddit.com's; a tap shows it. */
 @Composable
-private fun SpoilerOr(p: Post, content: @Composable () -> Unit) {
-    if (!p.spoiler) return content()
+private fun SpoilerOr(p: Post, s: Settings, content: @Composable () -> Unit) {
+    if (!p.spoiler || s.forceShowHidden) return content()
     var shown by rememberSaveable(p.id) { mutableStateOf(false) }
     if (shown) content() else SpoilerTextCover(Modifier.padding(top = 6.dp, end = 6.dp)) { shown = true }
 }
@@ -1301,7 +1301,7 @@ private fun CalmBody(p: Post, a: PostActions, s: Settings, mediaShape: androidx.
         Spacer(Modifier.height(10.dp))
         PollOptions(p)
     }
-    if (p.snippet.isNotEmpty()) SpoilerOr(p) {
+    if (p.snippet.isNotEmpty()) SpoilerOr(p, s) {
         ScaledText(TextKind.POST_TEXT) { Text(
             rememberSnippet(p),
             Modifier.padding(top = 6.dp).readDim(),
