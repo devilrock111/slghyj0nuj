@@ -1456,7 +1456,7 @@ private fun PostMedia(p: Post, nav: AppNavigator, radius: androidx.compose.ui.un
     if (p.type == PostType.SELF) return
     val cs = MaterialTheme.colorScheme
     val blurNsfw by app.settings.state.collectAsState()
-    val blur = (p.over18 && blurNsfw.blurNsfw) || p.spoiler
+    val blur = !blurNsfw.forceShowHidden && ((p.over18 && blurNsfw.blurNsfw) || p.spoiler)
     val label = if (p.over18) "NSFW" else "Spoiler"
     if (p.type == PostType.GALLERY && p.gallery.isNotEmpty()) {
         // A spoiler / NSFW gallery covers each image, as in the feed (#229, #165): it still
@@ -2334,8 +2334,9 @@ private fun ContestNotice() {
 private fun PostBody(p: Post) {
     if (p.selftext.isEmpty()) return
     // A spoiler's text stays covered until tapped (#204), as on reddit.com.
+    val settings by app.settings.state.collectAsState()
     var shown by rememberSaveable(p.id) { mutableStateOf(!p.spoiler) }
-    if (!shown) return com.bennybar.luli_for_reddit.feature.feed.SpoilerTextCover { shown = true }
+    if (!shown && !settings.forceShowHidden) return com.bennybar.luli_for_reddit.feature.feed.SpoilerTextCover { shown = true }
     ScaledText(TextKind.POST_TEXT) { BodyWithMedia(p.selftext, p.bodyMedia, LocalNavigator.current, maxMedia = 10, selectable = true) }
 }
 
