@@ -938,8 +938,8 @@ fun SettingsList(
             Icons.Rounded.ViewCarousel, s.feedGalleryCarousel, ctrl::setFeedGalleryCarousel,
         )
         switch("Blur NSFW media", "Tap to reveal blurred images", Icons.Rounded.BlurOn, s.blurNsfw, ctrl::setBlurNsfw)
-        switch("Mini card: blurred thumbnails open fullscreen", "When on, tapping an NSFW or spoiler thumbnail in Mini cards opens media fullscreen directly", Icons.Outlined.Visibility, s.miniThumbDirectFullscreen, ctrl::setMiniThumbDirectFullscreen)
-        switch("Show all hidden content", "Show NSFW and spoiler media and spoiler text without tapping to reveal", Icons.Outlined.Visibility, s.forceShowHidden, ctrl::setForceShowHidden)
+        switch("Mini card: tap any image or video to open fullscreen", "When on, tapping any image or video in Mini cards — including NSFW — opens it fullscreen directly instead of the post", Icons.Outlined.Visibility, s.miniThumbDirectFullscreen, ctrl::setMiniThumbDirectFullscreen)
+        switch("Show all hidden content", "Show NSFW and spoiler media, spoiler text and NSFW posts in feeds without tapping to reveal or unhiding them", Icons.Outlined.Visibility, s.forceShowHidden, ctrl::setForceShowHidden)
         // Content filters' switch, here too: beside the blur is where people look for it (#94).
         switch(
             "Hide NSFW posts", "Remove them from feeds and search instead of blurring",
