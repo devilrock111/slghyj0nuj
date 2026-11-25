@@ -45,6 +45,12 @@ final class ShareMediaTests: XCTestCase {
         let real = #"<MPD><Period duration="PT8.066667S" id="0"><AdaptationSet contentType="video" id="1" maxFrameRate="15360/512"><Representation bandwidth="169464" codecs="avc1.4d401e" frameRate="15360/512" height="220" id="5" mimeType="video/mp4" width="220"><BaseURL>CMAF_220.mp4</BaseURL><SegmentBase indexRange="871-938" timescale="15360"><Initialization range="0-870" /></SegmentBase></Representation></AdaptationSet></Period></MPD>"#
         XCTAssertNil(audioTrack(real))
     }
+
+    func testAnHLSOnlyPostSavesThePlaylistsBestVideo() {
+        // #261
+        XCTAssertEqual(videoTrack(mpd("")), "CMAF_720.mp4")
+        XCTAssertNil(videoTrack("<MPD></MPD>"))
+    }
 }
 
 /// Not a Kotlin test: which card gets the one inline player.
@@ -65,5 +71,12 @@ final class InlineVideoPoolTests: XCTestCase {
     func testAPlayingCardBelowTheThresholdLosesThePlayer() {
         XCTAssertEqual(InlineVideoPool.choose([0.6, 0.65], current: 0), 1)
         XCTAssertNil(InlineVideoPool.choose([0.5], current: 0))
+    }
+}
+
+/// The playback speed button's labels (#260), as the Kotlin app's SpeedLabelTest.
+final class SpeedLabelTests: XCTestCase {
+    func testWholeSpeedsHaveNoDecimalsOthersNoTrailingZeros() {
+        XCTAssertEqual(videoSpeeds.map(speedLabel), ["0.5×", "1×", "1.25×", "1.5×", "2×", "4×"])
     }
 }
