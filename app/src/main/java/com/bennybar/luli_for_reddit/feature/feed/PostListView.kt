@@ -120,6 +120,8 @@ import com.bennybar.luli_for_reddit.ui.ErrorView
 import com.bennybar.luli_for_reddit.ui.Overlays
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.map
+import androidx.compose.foundation.layout.calculateStartPadding
 import com.bennybar.luli_for_reddit.model.Post
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.delay
@@ -531,6 +533,16 @@ private fun FeedList(
     val posts = rememberShownPosts(feedKey, state.posts)
     val hidden = state.posts.size - posts.size
 
+    // The first cards after the deck are dealt in once each, and only just after the list
+    // lands: a card shown later (scrolled to, or rebuilt by Home's upgrade with another
+    // content type) is never dealt again. (Calm often shows only one or two cards.)
+    val dealt = remember(dealHome) { HashSet<String>() }
+    if (dealHome) LaunchedEffect(Unit) { delay(1000); onDealt() }
+    // A cached page scrolled by hand: its fresh page waits behind "New posts".
+    LaunchedEffect(listState, controller) {
+        snapshotFlow { listState.isScrollInProgress }.collect { if (it) controller.userScrolled() }
+    }
+
     // Paging is triggered by reaching rows near the end. If the filters hide
     // (almost) everything loaded, there are no rows to reach and the list
     // can't scroll, so the feed stalled blank. Keep fetching instead, up to a
@@ -602,11 +614,16 @@ private fun FeedList(
         }
     }
 
+    // Compact's flat rows (#284) reach past the list's side inset to the screen's edges,
+    // and sit closer together.
+    val display by remember { app.settings.state.map { it.postDisplay }.distinctUntilChanged() }.collectAsState(app.settings.value.postDisplay)
+    val sideInset = listPadding.calculateStartPadding(androidx.compose.ui.unit.LayoutDirection.Ltr)
+    CompositionLocalProvider(LocalFeedSideInset provides sideInset) {
     LazyColumn(
         Modifier.fillMaxSize(),
         state = listState,
         contentPadding = listPadding,
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(if (display == PostDisplay.COMPACT) 6.dp else 10.dp),
     ) {
         if (header != null) item(key = "header", contentType = "header") { header() }
         item(key = "sortbar", contentType = "sortbar") { chips() }
@@ -619,8 +636,8 @@ private fun FeedList(
             val p = posts[i]
             if (deckMode && i < 3) {
                 // The first cards after the loading deck are dealt in.
-                if (i == 2) LaunchedEffect(Unit) { onDealt() }
-                DealIn(i, animate = dealHome) { CompositionLocalProvider(LocalDismissible provides dismissible, LocalFrontpage provides frontpage) { PostCard(p) } }
+                val deal = remember(p.id) { dealHome && dealt.add(p.id) }
+                DealIn(i, animate = deal) { CompositionLocalProvider(LocalDismissible provides dismissible, LocalFrontpage provides frontpage) { PostCard(p) } }
             } else {
                 CompositionLocalProvider(LocalDismissible provides dismissible, LocalFrontpage provides frontpage) { PostCard(p) }
             }
@@ -644,6 +661,7 @@ private fun FeedList(
                 }
             }
         }
+    }
     }
 }
 
@@ -992,5 +1010,36 @@ private fun HomeStatusStrip(status: HomeStatus, onRetry: () -> Unit) {
         TextButton(onClick = { if (signIn) nav.push(Route.WebLogin()) else onRetry() }) {
             Text(if (signIn) "Sign in" else if (status is HomeStatus.Saved) "Refresh" else "Retry")
         }
+    }
+}
+
+/**
+ * Settings › Appearance's sample of the floating filter chips: the feed's own chip row
+ * (Best picked), on the top bar's surface when [solid], else outlined over what's under
+ * it, as the floating row is drawn over a feed. Inert: picks do nothing.
+ */
+@Composable
+internal fun FloatingChipsSample(solid: Boolean, modifier: Modifier = Modifier) {
+    val barColor = MaterialTheme.colorScheme.surface
+    Box(
+        modifier
+            .fillMaxWidth()
+            .then(if (solid) Modifier.drawBehind { drawRect(barColor) } else Modifier)
+            .padding(horizontal = 7.dp),
+    ) {
+        FeedChips(
+            outline = if (solid) 0f else 1f,
+            sort = PostSort.BEST,
+            time = TopTime.DAY,
+            state = rememberLazyListState(),
+            onPick = { _, _ -> },
+            isFrontpage = false,
+            forYou = false,
+            onForYou = {},
+            redditHome = false,
+            onRedditHome = null,
+            blend = false,
+            onBlend = null,
+        )
     }
 }

@@ -47,6 +47,45 @@ class Release(val version: String, val date: String, val highlights: List<String
  */
 val CHANGELOG = listOf(
     Release(
+        "2.0.119", "Nov 26, 2026",
+        listOf(
+            "Appearance: a Preview button on each group (Layout, Colour, Text, Comments) opens the real post with that group's options under it, instead of a preview pinned over the page (#288)",
+            "\"r/ and u/ before names\": the setting now also hides the u/ before user names (#289)",
+            "Search: a full-width field with ← inside it, growing out of the search button with the words travelling along; page searches (Saved, History, Settings, Summaries) grow from their own 🔍 as a thicker pill, and with the Full top bar they and communities get the round search bar (#285)",
+            "Community and profile pictures grow out of their circle into the viewer and back; the viewers close with a back arrow instead of × (#287)",
+            "A community's description grows and shrinks smoothly on Show all / Show less (#286)",
+            "Spoilers in the Home feed show the photo when tapped, not a blur, and stay revealed on the post page",
+        ),
+    ),
+    Release(
+        "2.0.118", "Nov 26, 2026",
+        listOf(
+            "Appearance: a live preview of a real post at the top, at true size, that changes as you change any option; it switches to a sample comment thread for comment sizes and steps aside for options it can't show",
+            "Appearance: options change right on the page (layout chips, segmented choices, colour swatches, sliders), grouped as Layout, Colour, Text and Other, so nothing closes while you try them",
+        ),
+    ),
+    Release(
+        "2.0.117", "Nov 26, 2026",
+        listOf(
+            "Appearance: Corner roundness (Round, Medium, Small, Square) for posts' cards and media (#283)",
+            "Two new post layouts: Compact (flat rows, a meta line on top, a slim action row) and Compact cards (the poster's picture, votes on the right) (#284)",
+            "The poster's picture shows with the website sign-in too, where Reddit sends it with the post",
+        ),
+    ),
+    Release(
+        "2.0.116", "Nov 26, 2026",
+        listOf(
+            "Home feed: posts arrive complete on the first paint (flair, icons, size), and faster",
+            "Feeds: cards fly in once, stay put when updated, and a fresh page doesn't yank you to the top",
+            "Search: the search box grows into the search page (#271); with the Expandable top bar, Saved, History, Settings and Summaries search from a 🔍 in the bar (#247)",
+            "Subreddit page: the icon sits lower, Join is a + by the name with a \"Joined\" note, no empty description card, and the description keeps its size (#277, #278); search and ⋯ share one pill (#282)",
+            "Tap a community's or user's picture to see it full screen (#279)",
+            "Side bar: long-press a recently visited community to remove it (#280)",
+            "Search history: no more bare author: entries; a search in someone's posts shows their u/name tag (#281)",
+            "Subreddit banners: the phone banner when there is one, and no more blurry zoom",
+        ),
+    ),
+    Release(
         "2.0.115", "Nov 25, 2026",
         listOf(
             "Home feed: posts appear at their final size, the photo stays put instead of loading twice, and galleries fill in without resizing",

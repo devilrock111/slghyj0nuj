@@ -38,6 +38,46 @@ enum TopBarMode: Int, CaseIterable, Sendable {
     }
 }
 
+/// How round feed posts' cards and media are (#283): `factor` scales each corner's radius.
+/// Persisted by index (`cornerRoundness`, never reorder).
+enum CornerRoundness: Int, CaseIterable, Sendable {
+    case round, medium, small, square
+
+    var label: String {
+        switch self {
+        case .round: "Round"
+        case .medium: "Medium"
+        case .small: "Small"
+        case .square: "Square"
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .round: "Soft, round corners, as designed"
+        case .medium: "Less round"
+        case .small: "Slightly rounded: photos keep more of their corners"
+        case .square: "No rounding"
+        }
+    }
+
+    var factor: CGFloat {
+        switch self {
+        case .round: 1
+        case .medium: 0.6
+        case .small: 0.3
+        case .square: 0
+        }
+    }
+}
+
+/// `r` at `factor`: as is at 1, none at 0, otherwise scaled but not under 4pt (or `r` if smaller).
+func scaleCorner(_ r: CGFloat, _ factor: CGFloat) -> CGFloat {
+    if factor >= 1 { return r }
+    if factor <= 0 { return 0 }
+    return max(r * factor, min(r, 4))
+}
+
 /// The floating button on Home (#62). Persisted by index (`homeFab`).
 enum HomeFab: Int, CaseIterable, Sendable {
     case off, newPost, search
@@ -53,7 +93,8 @@ enum HomeFab: Int, CaseIterable, Sendable {
 
 /// How posts are laid out in feeds. Persisted by index (`postDisplay`).
 enum PostDisplay: Int, CaseIterable, Sendable {
-    case large, card, mini, calm, calmCards
+    // compact / compactCards (#284, after Sync for Reddit): appended, as it's stored by raw value.
+    case large, card, mini, calm, calmCards, compact, compactCards
 
     var label: String {
         switch self {
@@ -62,6 +103,8 @@ enum PostDisplay: Int, CaseIterable, Sendable {
         case .mini: return "Mini cards"
         case .calm: return "Calm"
         case .calmCards: return "Calm cards"
+        case .compact: return "Compact"
+        case .compactCards: return "Compact cards"
         }
     }
 
@@ -73,11 +116,19 @@ enum PostDisplay: Int, CaseIterable, Sendable {
         case .mini: return "list.bullet"
         case .calm: return "leaf.fill"
         case .calmCards: return "leaf"
+        case .compact: return "list.bullet.rectangle"
+        case .compactCards: return "rectangle.stack"
         }
     }
 
     /// Both Calm layouts share the Calm post view and the ⋮-sheet read toggle.
     var isCalm: Bool { self == .calm || self == .calmCards }
+
+    /// The card has its own read toggle; the others offer it in the ⋮ sheet.
+    var readToggleOnCard: Bool { self == .large || self == .card || self == .mini }
+
+    /// Shows the poster's picture, so it asks for posters' pictures (as Settings › Poster's picture).
+    var showsPosters: Bool { self == .compactCards }
 }
 
 /// What a swipe on a post or comment does. Persisted by [rawValue] (Flutter's enum name).
@@ -233,6 +284,7 @@ struct Settings: Equatable, Sendable {
     var dimReadTextOnly = false // read posts: dim only title / text (images stay bright), else the whole card
     var dimRead = true // read posts dim at all (#106); off: history is still kept, nothing fades
     var subredditIcons = true // cards show the subreddit's icon (else its first letter)
+    var subredditPrefix = true // subreddit and user names show as "r/name" and "u/name" (else just "name", #97, #289); display only
     var postAvatars = false // the poster's picture on the subreddit icon (#270): one more request per page
     var sideBarUserPrefix = true // the side bar shows your name as "u/name" (else just "name", #167)
     var markReadOnScroll = false // a post scrolled past counts as read
@@ -314,6 +366,7 @@ struct Settings: Equatable, Sendable {
     var threadButtonsHideOnScroll = false // the thread's buttons step aside while you scroll (#210)
     var resumeThreads = true // reopening a thread scrolls back to where you left off (#179); off: from the top (#269)
     var topBarMode: TopBarMode = .expandable // Posts-screen action layout
+    var cornerRoundness: CornerRoundness = .round // feed posts' cards and media (#283)
     var navLabels = true // show text labels on the bottom nav bar
     var inboxInProfile = false // Inbox opens from Profile's top bar instead of being a tab
     var navStyle = 0 // 0 bottom bar, 1 side bar, 2 both (#25)

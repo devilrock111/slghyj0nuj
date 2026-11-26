@@ -148,4 +148,160 @@ extension View {
         navigationTitle(title)
             .navigationBarTitleDisplayMode(app.settings.value.topBarMode == .expandable ? .large : .inline)
     }
+
+    /// A page's search in its bar, as WhatsApp's: with Expandable a 🔍 (#247), with the Full
+    /// bar the tabs' round search bar in place of the title (#285). Either opens a field across
+    /// the bar, a pill with its ← inside, growing out of where it was tapped.
+    func barSearch(text: Binding<String>, prompt: String) -> some View {
+        modifier(BarSearchModifier(text: text, prompt: prompt, full: app.settings.value.topBarMode == .full))
+    }
+}
+
+/// The page's bar search is open (`barSearch`): the page hides its own bar buttons
+/// meanwhile, so the field has the bar, as WhatsApp's (#285).
+struct BarSearchOpenKey: PreferenceKey {
+    static let defaultValue = false
+    static func reduce(value: inout Bool, nextValue: () -> Bool) { value = value || nextValue() }
+}
+
+private struct BarSearchModifier: ViewModifier {
+    @Binding var text: String
+    let prompt: String
+    let full: Bool
+
+    @State private var open = false
+    /// The button it was opened from, on screen: the field grows out of it.
+    @State private var from: CGRect?
+    /// The page's width: the bar's field spans it (a bar item only takes what it asks for).
+    @State private var width: CGFloat = 0
+
+    func body(content: Content) -> some View {
+        content
+            .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { width = $0 }
+            .navigationBarBackButtonHidden(open)
+            .navigationBarTitleDisplayMode(open || full ? .inline : .large)
+            .preference(key: BarSearchOpenKey.self, value: open)
+            .toolbar {
+                if open {
+                    ToolbarItem(placement: .principal) {
+                        BarSearchField(text: $text, prompt: prompt, fromSearchBar: full, from: from, width: max(0, width - 32)) {
+                            text = ""
+                            open = false
+                        }
+                    }
+                } else if full {
+                    ToolbarItem(placement: .principal) {
+                        Button(action: openField) {
+                            Text(prompt)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .frame(width: 220, alignment: .center)
+                        }
+                    }
+                } else {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button(prompt, systemImage: "magnifyingglass", action: openField)
+                    }
+                }
+            }
+    }
+
+    private func openField() {
+        from = barButtonFrame(prompt)
+        open = true
+    }
+}
+
+/// The open field: a pill as tall as the bar allows, its ← inside, growing out of the button
+/// it was opened from (`from`, on screen: the 🔍, or the search bar with its words travelling
+/// to the field's start), and shrinking back into it on close.
+private struct BarSearchField: View {
+    @Binding var text: String
+    let prompt: String
+    let fromSearchBar: Bool
+    let from: CGRect?
+    let width: CGFloat
+    let onClose: () -> Void
+
+    @State private var grown = false
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Button("Close search", systemImage: "chevron.backward") { close() }
+                .labelStyle(.iconOnly)
+                .frame(width: 36, height: 36)
+                .opacity(grown ? 1 : 0)
+            TextField(prompt, text: $text)
+                .submitLabel(.search)
+                .autocorrectionDisabled()
+            if !text.isEmpty {
+                Button("Clear", systemImage: "xmark.circle.fill") { text = "" }
+                    .labelStyle(.iconOnly)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.leading, 4)
+        .padding(.trailing, 12)
+        .offset(x: travel)
+        .frame(height: 44)
+        .frame(width: width)
+        // From the 🔍 there are no words to move: they fade in as it grows.
+        .opacity(grown || fromSearchBar ? 1 : 0)
+        .background(alignment: .topLeading) {
+            let r = pill
+            Capsule()
+                .fill(Color(.tertiarySystemFill))
+                .frame(width: r.width, height: r.height)
+                .offset(x: r.minX, y: r.minY)
+        }
+        .onAppear {
+            // After its first frame, at the button's size.
+            Task { withAnimation(.snappy(duration: 0.3)) { grown = true } }
+            // The keyboard, once it's in the bar (a focus state doesn't reach into the bar).
+            Task {
+                try? await Task.sleep(for: .milliseconds(150))
+                focusBarField(placeholder: prompt)
+            }
+        }
+    }
+
+    /// The pill, in this view's space (the bar's width less 16 a side): the button it grew
+    /// from, or all of it.
+    private var pill: CGRect {
+        if grown { return CGRect(x: 0, y: 0, width: width, height: 44) }
+        if let from { return CGRect(x: from.minX - 16, y: 0, width: from.width, height: 44) }
+        return fromSearchBar
+            ? CGRect(x: (width - 220) / 2, y: 0, width: 220, height: 44)
+            : CGRect(x: width - 44, y: 0, width: 44, height: 44)
+    }
+
+    /// From the search bar, the words start where they were on it (its middle) and travel to
+    /// the field's start, after the ←: how far right of there.
+    private var travel: CGFloat {
+        guard !grown, fromSearchBar, let from else { return 0 }
+        let words = (prompt as NSString).size(withAttributes: [.font: UIFont.preferredFont(forTextStyle: .body)]).width
+        return from.midX - words / 2 - 16 - 44
+    }
+
+    private func close() {
+        endEditing()
+        withAnimation(.snappy(duration: 0.25)) { grown = false } completion: { onClose() }
+    }
+}
+
+/// Puts the keyboard on the shown text field with `placeholder` (one in the bar can't be
+/// focused with a focus state).
+@MainActor func focusBarField(placeholder: String) {
+    guard let window = topViewController()?.view.window else { return }
+    func find(_ v: UIView) -> UITextField? {
+        if let f = v as? UITextField, f.placeholder == placeholder, !f.isHidden { return f }
+        for s in v.subviews { if let f = find(s) { return f } }
+        return nil
+    }
+    find(window)?.becomeFirstResponder()
+}
+
+/// Closes the keyboard, wherever it's typing.
+@MainActor func endEditing() {
+    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
 }

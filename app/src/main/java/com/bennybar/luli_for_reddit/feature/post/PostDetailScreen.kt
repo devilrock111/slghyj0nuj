@@ -1,5 +1,6 @@
 package com.bennybar.luli_for_reddit.feature.post
 
+import com.bennybar.luli_for_reddit.ui.theme.corner
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.animation.core.animate
@@ -244,6 +245,7 @@ import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.rememberUpdatedState
 import kotlinx.coroutines.launch
+import com.bennybar.luli_for_reddit.ui.userName
 
 /** Depth-edge colors (rotate by nesting level). */
 private val railColors = listOf(
@@ -706,14 +708,17 @@ class ThreadDwell(postId: String) : androidx.lifecycle.ViewModel() {
     }
 }
 
-/** Row actions for the comment list, in one stable object (rows stay skippable). */
+/**
+ * Row actions for the comment list, in one stable object (rows stay skippable).
+ * [vm] null: Settings › Appearance's sample thread, which draws real rows but never acts.
+ */
 @Stable
-private class ThreadActions(val vm: CommentsViewModel, val nav: AppNavigator, val scope: CoroutineScope) {
+private class ThreadActions(val vm: CommentsViewModel?, val nav: AppNavigator, val scope: CoroutineScope) {
     var post: Post? = null
     var flat: List<Comment> = emptyList()
 
-    fun toggle(c: Comment) = vm.toggleCollapse(c.id)
-    fun unfold(c: Comment) = vm.unfold(c.id)
+    fun toggle(c: Comment) { vm?.toggleCollapse(c.id) }
+    fun unfold(c: Comment) { vm?.unfold(c.id) }
 
     fun loadMore(c: Comment) {
         val p = post ?: return
@@ -723,7 +728,7 @@ private class ThreadActions(val vm: CommentsViewModel, val nav: AppNavigator, va
         if (c.moreChildren.isEmpty() && c.parentId.startsWith("t1_")) {
             nav.openPost(p, focusCommentId = c.parentId.removePrefix("t1_"))
         } else {
-            vm.loadMore(c)
+            vm?.loadMore(c)
         }
     }
 
@@ -732,7 +737,7 @@ private class ThreadActions(val vm: CommentsViewModel, val nav: AppNavigator, va
 
     private fun onReplied(parent: String, reply: Comment) {
         val p = post ?: return
-        vm.insertReply(parent, reply)
+        vm?.insertReply(parent, reply)
         // The new comment lands at the top of the thread or under its parent —
         // often off-screen, so it looked like nothing happened. Bring it in.
         reveal(reply.fullname)
@@ -751,7 +756,7 @@ private class ThreadActions(val vm: CommentsViewModel, val nav: AppNavigator, va
     }
 
     fun edit(c: Comment) {
-        scope.launch { showEditSheet(c.fullname, c.body)?.let { vm.applyEdit(c.fullname, it) } }
+        scope.launch { showEditSheet(c.fullname, c.body)?.let { vm?.applyEdit(c.fullname, it) } }
     }
 
     fun delete(c: Comment) {
@@ -759,7 +764,7 @@ private class ThreadActions(val vm: CommentsViewModel, val nav: AppNavigator, va
             if (!confirmDelete("comment")) return@launch
             try {
                 app.repository.deleteThing(c.fullname)
-                vm.removeComment(c.fullname)
+                vm?.removeComment(c.fullname)
             } catch (e: Exception) {
                 nav.showActionError("delete", e)
             }
@@ -771,7 +776,7 @@ private class ThreadActions(val vm: CommentsViewModel, val nav: AppNavigator, va
         val target = if (current == dir) 0 else dir
         // Upvoting comments says you're into this thread's subreddit.
         if (target == 1) post?.let { app.forYou.learner.commentUpvote(it) }
-        vm.updateComment(c.fullname) {
+        vm?.updateComment(c.fullname) {
             it.copy(score = it.score + target - current, likes = when (target) { 1 -> true; -1 -> false; else -> null })
         }
         app.commentVotes.setVote(c, target)
@@ -779,7 +784,7 @@ private class ThreadActions(val vm: CommentsViewModel, val nav: AppNavigator, va
             try {
                 app.repository.vote(c.fullname, target)
             } catch (e: Exception) {
-                vm.updateComment(c.fullname) { it.copy(score = c.score, likes = c.likes) }
+                vm?.updateComment(c.fullname) { it.copy(score = c.score, likes = c.likes) }
                 app.commentVotes.setVote(c, current)
                 nav.showActionError("vote", e)
             }
@@ -788,12 +793,12 @@ private class ThreadActions(val vm: CommentsViewModel, val nav: AppNavigator, va
 
     fun toggleSave(c: Comment) {
         val next = !c.saved
-        vm.updateComment(c.fullname) { it.copy(saved = next) }
+        vm?.updateComment(c.fullname) { it.copy(saved = next) }
         scope.launch {
             try {
                 app.repository.setSaved(c.fullname, next)
             } catch (e: Exception) {
-                vm.updateComment(c.fullname) { it.copy(saved = !next) }
+                vm?.updateComment(c.fullname) { it.copy(saved = !next) }
                 nav.showActionError(if (next) "save" else "unsave", e)
             }
         }
@@ -813,8 +818,10 @@ private class ThreadActions(val vm: CommentsViewModel, val nav: AppNavigator, va
     var translatedComments: Set<String> = emptySet()
 
     /** ⋯ → Translate / Show original on one comment. */
-    fun translate(c: Comment) = vm.translateComment(c.fullname) { targets ->
-        pickOption(targets.map { PickOption(it, "Translate to ${Translate.languageName(it)}") }, null)
+    fun translate(c: Comment) {
+        vm?.translateComment(c.fullname) { targets ->
+            pickOption(targets.map { PickOption(it, "Translate to ${Translate.languageName(it)}") }, null)
+        }
     }
 
     fun block(c: Comment) {
@@ -828,8 +835,8 @@ private class ThreadActions(val vm: CommentsViewModel, val nav: AppNavigator, va
     fun mod(c: Comment, doneMsg: String, action: suspend (com.bennybar.luli_for_reddit.data.RedditRepository) -> Unit) {
         scope.launch {
             if (!modAction(doneMsg, action)) return@launch
-            if (doneMsg.startsWith("Distinguished")) vm.updateComment(c.fullname) { it.copy(distinguished = "moderator") }
-            else if (doneMsg.startsWith("Undistinguished")) vm.updateComment(c.fullname) { it.copy(distinguished = null) }
+            if (doneMsg.startsWith("Distinguished")) vm?.updateComment(c.fullname) { it.copy(distinguished = "moderator") }
+            else if (doneMsg.startsWith("Undistinguished")) vm?.updateComment(c.fullname) { it.copy(distinguished = null) }
         }
     }
 }
@@ -1287,7 +1294,7 @@ private fun PostHeader(post: Post, fresh: Boolean, translate: (@Composable (Dp) 
         Spacer(Modifier.height(2.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                "u/${p.author} · ${timeAgo(p.createdUtc)}",
+                "${userName(p.author)} · ${timeAgo(p.createdUtc)}",
                 Modifier.clickable { nav.openUser(p.author) },
                 fontSize = 12.sp,
                 color = cs.onSurfaceVariant,
@@ -1402,7 +1409,7 @@ private fun CalmPostHeader(
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "u/${p.author} · ${timeAgo(p.createdUtc)}",
+                        "${userName(p.author)} · ${timeAgo(p.createdUtc)}",
                         Modifier.clickable { nav.openUser(p.author) },
                         fontSize = 12.5.sp,
                         color = cs.onSurfaceVariant,
@@ -1522,6 +1529,7 @@ private fun openMedia(p: Post, nav: AppNavigator) {
 @Composable
 private fun PostMedia(p: Post, nav: AppNavigator, radius: androidx.compose.ui.unit.Dp = 16.dp) {
     if (p.type == PostType.SELF) return
+    val shape = RoundedCornerShape(corner(radius)) // Settings › Corner roundness (#283)
     val cs = MaterialTheme.colorScheme
     val blurNsfw by app.settings.state.collectAsState()
     val blur = !blurNsfw.forceShowHidden && ((p.over18 && blurNsfw.blurNsfw) || p.spoiler)
@@ -1531,8 +1539,8 @@ private fun PostMedia(p: Post, nav: AppNavigator, radius: androidx.compose.ui.un
         // swipes, and the first tap reveals them all.
         val cover = if (blur) label else null
         Box(Modifier.padding(bottom = 12.dp)) {
-            if (p.gallery.size > 1) GalleryM3Carousel(p.gallery, title = p.title, cover = cover)
-            else GalleryCarousel(p.gallery, if (radius != 16.dp) Modifier.clip(RoundedCornerShape(radius)) else Modifier, title = p.title, cover = cover)
+            if (p.gallery.size > 1) GalleryM3Carousel(p.gallery, title = p.title, cover = cover, revealKey = p.id)
+            else GalleryCarousel(p.gallery, title = p.title, shape = shape, cover = cover, revealKey = p.id)
         }
         return
     }
@@ -1543,7 +1551,7 @@ private fun PostMedia(p: Post, nav: AppNavigator, radius: androidx.compose.ui.un
             val w = p.previewWidth
             val h = p.previewHeight
             val aspect = if (w != null && h != null && h > 0) (w.toFloat() / h).coerceIn(0.5f, 2f) else 16f / 9f
-            NsfwBlur(blur, Modifier.padding(bottom = 8.dp), blurredImageUrl = p.blurredPreviewUrl, label = label) {
+            NsfwBlur(blur, Modifier.padding(bottom = 8.dp), blurredImageUrl = p.blurredPreviewUrl, revealKey = p.id, label = label, shape = shape) {
                 AsyncImage(
                     model = preview,
                     contentDescription = p.title,
@@ -1551,7 +1559,7 @@ private fun PostMedia(p: Post, nav: AppNavigator, radius: androidx.compose.ui.un
                     modifier = Modifier
                         .fillMaxWidth()
                         .aspectRatio(aspect)
-                        .clip(RoundedCornerShape(radius))
+                        .clip(shape)
                         .background(cs.surfaceContainerHighest)
                         .clickable { openMedia(p, nav) },
                 )
@@ -1571,12 +1579,12 @@ private fun PostMedia(p: Post, nav: AppNavigator, radius: androidx.compose.ui.un
     val w = p.previewWidth
     val h = p.previewHeight
     val aspect = if (w != null && h != null && h > 0) (w.toFloat() / h).coerceIn(0.5f, 2f) else 16f / 9f
-    NsfwBlur(blur, Modifier.padding(bottom = 12.dp), blurredImageUrl = p.blurredPreviewUrl, label = label) {
+    NsfwBlur(blur, Modifier.padding(bottom = 12.dp), blurredImageUrl = p.blurredPreviewUrl, revealKey = p.id, label = label, shape = shape) {
         Box(
             Modifier
                 .fillMaxWidth()
                 .aspectRatio(aspect)
-                .clip(RoundedCornerShape(radius))
+                .clip(shape)
                 .background(cs.surfaceContainerHighest)
                 .clickable { openMedia(p, nav) },
             contentAlignment = Alignment.Center,
@@ -1748,7 +1756,7 @@ private fun CommentTile(
                     AuthorDot(comment.author, 20)
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        "u/${comment.author}",
+                        userName(comment.author),
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
                         color = nameColor,
@@ -2562,3 +2570,30 @@ internal fun TranslateButton(targets: List<String>, shownIn: String?, busy: Bool
 /** Comment buttons only on tap (#239): how they come and go (#244). */
 private val commentButtonsIn = fadeIn() + expandVertically(expandFrom = Alignment.Top)
 private val commentButtonsOut = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top)
+
+/**
+ * Settings › Appearance's sample thread: the real comment rows, in the style threads use
+ * (Calm containers or the cards style), drawn with an inert [ThreadActions] — no view
+ * model, so nothing loads and nothing a row would do can run (the preview takes no
+ * touches either). [comments] in thread order, with their depths.
+ */
+@Composable
+internal fun SampleCommentThread(comments: List<Comment>, opAuthor: String, settings: Settings) {
+    val nav = LocalNavigator.current
+    val scope = rememberCoroutineScope()
+    val actions = remember(nav, scope) { ThreadActions(null, nav, scope) }
+    Column(Modifier.padding(top = 6.dp)) {
+        comments.forEachIndexed { i, c ->
+            if (settings.calmComments) {
+                val first = i == 0 || c.depth == 0
+                val last = i == comments.lastIndex || comments[i + 1].depth == 0
+                val rails = CalmRails(c.depth, prev = if (i == 0) 0 else comments[i - 1].depth, next = if (i == comments.lastIndex) 0 else comments[i + 1].depth)
+                CalmThreadRow(first, last, highlighted = false) {
+                    CalmCommentRow(c, rails, isNew = false, isOwn = false, opAuthor = opAuthor, collapsed = false, settings = settings, actions = actions)
+                }
+            } else {
+                CommentTile(c, highlighted = false, isNew = false, isOwn = false, opAuthor = opAuthor, collapsed = false, settings = settings, actions = actions)
+            }
+        }
+    }
+}

@@ -1,6 +1,76 @@
 import XCTest
 @testable import Ilay
 
+/// `postDisplay` is stored by raw value: the Compact layouts (#284) come after the old ones,
+/// as the Kotlin app's PostDisplayTest.
+final class PostDisplayTests: XCTestCase {
+    func testStoredLayoutsKeepTheirMeaning() {
+        XCTAssertEqual([0, 1, 2, 3, 4].compactMap(PostDisplay.init(rawValue:)), [.large, .card, .mini, .calm, .calmCards])
+        XCTAssertEqual(PostDisplay(rawValue: 5), .compact)
+        XCTAssertEqual(PostDisplay(rawValue: 6), .compactCards)
+    }
+
+    func testCompactLayoutsKeepMarkReadInTheSheetAndOnlyCompactCardsAsksForPosters() {
+        XCTAssertFalse(PostDisplay.compact.readToggleOnCard)
+        XCTAssertFalse(PostDisplay.compactCards.readToggleOnCard)
+        XCTAssertTrue(PostDisplay.large.readToggleOnCard)
+        XCTAssertFalse(PostDisplay.calm.readToggleOnCard)
+        XCTAssertTrue(PostDisplay.compactCards.showsPosters)
+        XCTAssertFalse(PostDisplay.compact.showsPosters)
+    }
+
+    @MainActor func testCompactRowsRunEdgeToEdgeAndCompactCardsInsetTen() {
+        var c = FeedRowConfig.current(width: 400)
+        c.display = .compact
+        XCTAssertEqual(c.cardInset, 0)
+        XCTAssertEqual(c.contentInset, 16)
+        XCTAssertTrue(c.isCarded)
+        c.display = .compactCards
+        XCTAssertEqual(c.cardInset, 10)
+        XCTAssertEqual(c.contentInset, 14)
+    }
+}
+
+/// Names on screen with and without "r/" and "u/" (#97, #289), as the Kotlin app's SubredditNameTest.
+final class NamePrefixTests: XCTestCase {
+    func testSubredditsFollowTheSetting() {
+        XCTAssertEqual(subredditName("pics", prefix: true), "r/pics")
+        XCTAssertEqual(subredditName("r/pics", prefix: true), "r/pics")
+        XCTAssertEqual(subredditName("r/pics", prefix: false), "pics")
+    }
+
+    func testUsersAndProfilesFollowTheSetting() {
+        XCTAssertEqual(userName("someone", prefix: true), "u/someone")
+        XCTAssertEqual(userName("u/someone", prefix: false), "someone")
+        XCTAssertEqual(subredditName("u_someone", prefix: true), "u/someone")
+        XCTAssertEqual(subredditName("u/someone", prefix: false), "someone")
+    }
+}
+
+/// Settings › Appearance › Corner roundness (#283), as the Kotlin app's CornerRoundnessTest.
+final class CornerRoundnessTests: XCTestCase {
+    func testRoundIsTheDefaultAndKeepsTodaysCorners() {
+        XCTAssertEqual(Settings().cornerRoundness, .round)
+        XCTAssertEqual(scaleCorner(28, CornerRoundness.round.factor), 28)
+    }
+
+    func testMediumAndSmallScaleDownButNeverUnder4() {
+        XCTAssertEqual(scaleCorner(20, CornerRoundness.medium.factor), 12, accuracy: 0.001)
+        XCTAssertEqual(scaleCorner(20, CornerRoundness.small.factor), 6, accuracy: 0.001)
+        XCTAssertEqual(scaleCorner(6, CornerRoundness.small.factor), 4)
+        XCTAssertEqual(scaleCorner(3, CornerRoundness.small.factor), 3, "a corner under 4 isn't rounded more")
+    }
+
+    func testSquareHasNoRounding() {
+        XCTAssertEqual(scaleCorner(28, CornerRoundness.square.factor), 0)
+    }
+
+    func testPersistedByIndexNeverReordered() {
+        XCTAssertEqual(CornerRoundness.allCases.map(\.rawValue), [0, 1, 2, 3])
+        XCTAssertEqual(CornerRoundness.allCases.map(\.label), ["Round", "Medium", "Small", "Square"])
+    }
+}
+
 final class SharedTextTests: XCTestCase {
     func testABarePostLink() {
         let url = "https://www.reddit.com/r/Android/comments/abc123/some_title/"

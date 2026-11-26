@@ -103,6 +103,16 @@ class AppNavigator(
 
     fun openImage(url: String, title: String? = null) = viewers.open(MediaViewer.Image(url, title))
 
+    /**
+     * A community's or user's picture, full screen with its name over it (#279). The
+     * styles.redditmedia.com copy without its query is the original upload, not the
+     * 256 px crop the header shows.
+     */
+    fun openPicture(url: String, name: String, from: androidx.compose.ui.geometry.Rect? = null) {
+        val full = if (runCatching { Uri.parse(url).host }.getOrNull() == "styles.redditmedia.com") url.substringBefore("?") else url
+        viewers.open(MediaViewer.Image(full, name, thumb = url, from = from?.let { listOf(it.left, it.top, it.width, it.height) }.orEmpty()))
+    }
+
     fun openGallery(images: List<GalleryImage>, title: String? = null, initialIndex: Int = 0) {
         if (images.isEmpty()) return
         viewers.open(

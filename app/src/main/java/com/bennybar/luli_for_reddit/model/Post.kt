@@ -36,6 +36,11 @@ data class Post(
     val author: String,
     /** The author's account id (t2_…), for their picture on cards (#270); empty when unknown. */
     val authorFullname: String = "",
+    /**
+     * The author's picture when the post's own data has it (GraphQL's authorInfo, with the
+     * website sign-in): shown on cards without a lookup (#284). Null from the REST API.
+     */
+    val authorIcon: String? = null,
     val score: Int,
     val numComments: Int,
     /** Null when the source doesn't say (a card read from the Home page; GraphQL without the field). */
@@ -144,6 +149,10 @@ data class Post(
             val flair = d["link_flair_text"].str()
             val poll = content["poll_data"]
             val pollRaw = poll["options"].arr().orEmpty().filter { !it["text"].str().isNullOrEmpty() }
+            val subredditIcon = (d["sr_detail"]["community_icon"].str()?.ifEmpty { null } ?: d["sr_detail"]["icon_img"].str()?.ifEmpty { null })
+                ?.replace("&amp;", "&")
+            // For a Reddit Home card's icon before its full post comes.
+            SubredditIcons.remember(d["subreddit"].str() ?: "", subredditIcon)
 
             return Post(
                 id = d["id"].str() ?: "",
@@ -151,10 +160,10 @@ data class Post(
                 title = (d["title"].str() ?: "").trim(),
                 subreddit = d["subreddit"].str() ?: "",
                 subredditPrefixed = d["subreddit_name_prefixed"].str() ?: "",
-                subredditIcon = (d["sr_detail"]["community_icon"].str()?.ifEmpty { null } ?: d["sr_detail"]["icon_img"].str()?.ifEmpty { null })
-                    ?.replace("&amp;", "&"),
+                subredditIcon = subredditIcon,
                 author = d["author"].str() ?: "[deleted]",
                 authorFullname = d["author_fullname"].str() ?: "",
+                authorIcon = d["author_icon"].str()?.takeIf { it.startsWith("http") },
                 authorFlair = flairOf(d, "author"),
                 score = d["score"].int() ?: 0,
                 numComments = d["num_comments"].int() ?: 0,

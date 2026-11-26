@@ -148,8 +148,9 @@ struct SavedScreen: View {
             }
             .background(PagedListHook(generation: state.items.count))
         }
+        // Inside the title: the open field's small title wins over the big one (#285).
+        .barSearch(text: $query, prompt: "Search saved")
         .pageTitle("Saved")
-        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search saved")
         .onChange(of: query) { _, new in model.setQuery(new) }
         .onChange(of: app.contentFilters.value.hideNsfw) { _, new in model.setHideNsfw(new) }
         .onChange(of: "\(state.items.count)|\(state.after ?? "")|\(state.loading)|\(state.loadingMore)", initial: true) { model.fillIfShort() }
@@ -164,7 +165,7 @@ private struct SavedComment: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: "text.bubble").font(.caption).foregroundStyle(.tint)
-                Text("r/\(comment.subreddit) · u/\(comment.author) · \(compactNumber(comment.score))")
+                Text("\(subredditName(comment.subreddit)) · u/\(comment.author) · \(compactNumber(comment.score))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)

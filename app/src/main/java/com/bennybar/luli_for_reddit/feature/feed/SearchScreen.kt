@@ -68,6 +68,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
@@ -80,6 +81,13 @@ import com.bennybar.luli_for_reddit.model.Post
 import com.bennybar.luli_for_reddit.model.RedditUser
 import com.bennybar.luli_for_reddit.model.Subreddit
 import com.bennybar.luli_for_reddit.nav.LocalNavigator
+import com.bennybar.luli_for_reddit.nav.searchMorphField
+import com.bennybar.luli_for_reddit.nav.searchMorphFieldText
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.add
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import com.bennybar.luli_for_reddit.ui.ErrorView
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -101,6 +109,7 @@ import com.bennybar.luli_for_reddit.core.str
 import com.bennybar.luli_for_reddit.feature.settings.confirmDialog
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import com.bennybar.luli_for_reddit.ui.userName
 
 private val SEARCH_SORTS = linkedMapOf(
     "relevance" to "Relevance",
@@ -159,12 +168,15 @@ class SearchViewModel(private val subreddit: String?) : ViewModel() {
     }
 
     init {
-        _state.update { it.copy(recent = app.prefs.getStringList(recentKey) ?: emptyList()) }
+        // A bare "author:name" (opening search from a profile) was saved before #281: not a search.
+        _state.update { it.copy(recent = (app.prefs.getStringList(recentKey) ?: emptyList()).filter { e -> splitAuthorQuery(e).second.isNotBlank() || !e.trim().startsWith("author:") }) }
     }
 
     private fun saveRecent(q: String) {
         // Recent searches are history: none kept while tracking is off.
         if (!app.settings.value.trackHistory) return
+        // Only "From u/name" with no words of your own isn't a search to keep (#281).
+        if (splitAuthorQuery(q).first != null && splitAuthorQuery(q).second.isBlank()) return
         val list = (listOf(q) + _state.value.recent.filter { it != q }).take(12)
         app.prefs.setStringList(recentKey, list)
         _state.update { it.copy(recent = list) }
@@ -370,20 +382,31 @@ fun SearchScreen(subreddit: String?, query: String?, sort: String? = null, time:
     Scaffold(
         topBar = {
             Column {
-                BloomTopBar(
-                    "",
-                    titleContent = {
+                // The field across the whole bar, its ← inside at the start (#285), as Gmail's.
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .windowInsetsPadding(TopAppBarDefaults.windowInsets.add(WindowInsets(top = 2.dp)))
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                ) {
                         PillTextField(
                             value = text,
                             onValueChange = { text = it },
                             placeholder = if (restricted) "Search in r/$subreddit" else "Search Reddit",
-                            modifier = Modifier.fillMaxWidth().padding(end = 16.dp).focusRequester(focus),
+                            // Grows out of the search box it was opened from (#271), its words with it (#285).
+                            modifier = Modifier.fillMaxWidth().searchMorphField().focusRequester(focus),
+                            placeholderModifier = Modifier.searchMorphFieldText(),
                             onSearch = { doSearch(withAuthor(it)) },
-                            leadingChip = author?.let { a ->
-                                {
-                                    AuthorChip(a) {
-                                        author = null
-                                        if (text.isNotBlank()) doSearch(text) else vm.clear()
+                            leadingContent = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    IconButton(onClick = { nav.pop() }, Modifier.padding(start = 4.dp)) {
+                                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back")
+                                    }
+                                    author?.let { a ->
+                                        AuthorChip(a) {
+                                            author = null
+                                            if (text.isNotBlank()) doSearch(text) else vm.clear()
+                                        }
                                     }
                                 }
                             },
@@ -413,8 +436,7 @@ fun SearchScreen(subreddit: String?, query: String?, sort: String? = null, time:
                                 }
                             }),
                         )
-                    },
-                )
+                }
                 if (!restricted) {
                     val selected = if (results) pager.currentPage else picked
                     PrimaryTabRow(selectedTabIndex = selected, containerColor = cs.surface) {
@@ -503,7 +525,7 @@ fun SearchScreen(subreddit: String?, query: String?, sort: String? = null, time:
                                 ResultTile(
                                     u.name,
                                     u.iconUrl,
-                                    "u/${u.name}",
+                                    userName(u.name),
                                     "${compactNumber(u.linkKarma + u.commentKarma)} karma",
                                 ) {
                                     vm.rememberOpened("u", u.name, u.iconUrl)
@@ -543,7 +565,7 @@ private fun recentResult(kind: String, name: String, icon: String?): String = bu
     if (icon != null) put("i", icon)
 }.toString()
 
-private fun recentLabel(r: RecentSearch): String = if (r.kind == "u") "u/${r.name}" else subredditName("r/${r.name}")
+private fun recentLabel(r: RecentSearch): String = if (r.kind == "u") userName(r.name) else subredditName("r/${r.name}")
 
 /** A row's place in a connected container, as in Settings: round only where the container starts or ends. */
 private fun Modifier.inGroup(i: Int, count: Int, color: Color): Modifier {
@@ -614,8 +636,20 @@ private fun EmptySearch(
         itemsIndexed(recent, key = { _, it -> it }) { i, e ->
             val r = remember(e) { parseRecent(e) }
             if (r.kind == null) {
+                // A search in someone's posts: your words, and their "u/name" tag at the end (#281).
+                val (author, words) = remember(r.name) { splitAuthorQuery(r.name) }
                 Tile(
-                    title = { Text(r.name) },
+                    title = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(words, Modifier.weight(1f, fill = false), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            if (author != null) {
+                                Spacer(Modifier.width(8.dp))
+                                Surface(shape = CircleShape, color = cs.secondaryContainer, contentColor = cs.onSecondaryContainer) {
+                                    Text("u/$author", Modifier.padding(horizontal = 10.dp, vertical = 3.dp), fontSize = 12.sp, maxLines = 1)
+                                }
+                            }
+                        }
+                    },
                     modifier = Modifier.inGroup(i, recent.size, cs.surfaceContainerLow),
                     leading = { Icon(Icons.Rounded.History, null) },
                     trailing = {

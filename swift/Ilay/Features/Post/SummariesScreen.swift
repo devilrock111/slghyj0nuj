@@ -6,6 +6,8 @@ struct SummariesScreen: View {
     @State private var query = ""
     @State private var selection = Set<String>()
     @State private var editMode: EditMode = .inactive
+    /// Its search field is open in the bar: Select gives way to it (#285).
+    @State private var searching = false
 
     private var items: [SavedSummary] { app.summaries.items }
 
@@ -48,10 +50,12 @@ struct SummariesScreen: View {
                 .listStyle(.plain)
             }
         }
+        // Inside the title: the open field's small title wins over the big one (#285).
+        .modifier(SummarySearch(enabled: items.count > 3, query: $query))
         .navigationTitle(selecting ? "\(selection.count) selected" : "Summaries")
         .navigationBarTitleDisplayMode(selecting ? .inline : .large)
         .environment(\.editMode, $editMode)
-        .modifier(SummarySearch(enabled: items.count > 3, query: $query))
+        .onPreferenceChange(BarSearchOpenKey.self) { searching = $0 }
         .toolbar {
             if selecting {
                 ToolbarItem(placement: .topBarLeading) {
@@ -70,7 +74,7 @@ struct SummariesScreen: View {
                     Button("Delete selected", systemImage: "trash", role: .destructive, action: deleteSelected)
                         .disabled(selection.isEmpty)
                 }
-            } else if !items.isEmpty {
+            } else if !items.isEmpty && !searching {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Select", systemImage: "checklist") { editMode = .active }
                 }
@@ -101,7 +105,7 @@ private struct SummarySearch: ViewModifier {
 
     func body(content: Content) -> some View {
         if enabled {
-            content.searchable(text: $query, prompt: "Search summaries")
+            content.barSearch(text: $query, prompt: "Search summaries")
         } else {
             content
         }
@@ -125,7 +129,7 @@ private struct SummaryRow: View {
         let s = summary
         VStack(alignment: .leading, spacing: 6) {
             Label {
-                Text(verbatim: "r/\(s.subreddit) · \(s.style) · \(timeAgo(s.createdAt))").lineLimit(1)
+                Text(verbatim: "\(subredditName(s.subreddit)) · \(s.style) · \(timeAgo(s.createdAt))").lineLimit(1)
             } icon: {
                 Image(systemName: "sparkles").foregroundStyle(.tint)
             }

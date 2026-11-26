@@ -47,6 +47,8 @@ struct HistoryScreen: View {
     /// Select mode (#155): pick several rows and remove them together (Undo puts them back).
     @State private var selection = Set<String>()
     @State private var editMode = EditMode.inactive
+    /// Its search field is open in the bar: the bar's buttons give way to it (#285).
+    @State private var searching = false
 
     var body: some View {
         let history = app.history.state
@@ -92,13 +94,14 @@ struct HistoryScreen: View {
                 .overlay {
                     if filtered.isEmpty { ContentUnavailableView.search }
                 }
-                .searchable(text: $query, prompt: "Search history")
+                .barSearch(text: $query, prompt: "Search history")
                 .environment(\.editMode, $editMode)
             }
         }
         .pageTitle("History")
+        .onPreferenceChange(BarSearchOpenKey.self) { searching = $0 }
         .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
+            if !searching { ToolbarItemGroup(placement: .topBarTrailing) {
                 if editMode.isEditing {
                     Button("Remove", systemImage: "trash", role: .destructive) {
                         let gone = history.filter { selection.contains($0.id) }
@@ -119,7 +122,7 @@ struct HistoryScreen: View {
                     Menu("Filter by subreddit", systemImage: subFilter == nil ? "line.3.horizontal.decrease" : "line.3.horizontal.decrease.circle.fill") {
                         Picker("Filter by subreddit", selection: $subFilterRaw) {
                             Text("All subreddits").tag(String?.none)
-                            ForEach(subs, id: \.self) { Text("r/\($0)").tag(String?.some($0)) }
+                            ForEach(subs, id: \.self) { Text(subredditName($0)).tag(String?.some($0)) }
                         }
                         .pickerStyle(.inline)
                     }
@@ -141,7 +144,7 @@ struct HistoryScreen: View {
                         }
                     }
                 }
-            }
+            } }
         }
     }
 
@@ -165,7 +168,7 @@ struct HistoryScreen: View {
                 LetterAvatar(name: e.subreddit.nilIfEmpty ?? "?", size: 36, imageUrl: icon)
                 VStack(alignment: .leading, spacing: 2) {
                     // The community opens its page (#155).
-                    Button("r/\(e.subreddit)") { if !e.subreddit.isEmpty { app.navigator.push(.subreddit(name: e.subreddit)) } }
+                    Button(subredditName(e.subreddit)) { if !e.subreddit.isEmpty { app.navigator.push(.subreddit(name: e.subreddit)) } }
                         .buttonStyle(.borderless)
                         .font(.footnote.weight(.semibold))
                         .disabled(editMode.isEditing)

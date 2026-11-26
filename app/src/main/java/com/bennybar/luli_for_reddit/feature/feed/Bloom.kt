@@ -19,6 +19,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.ProvideTextStyle
@@ -73,6 +79,16 @@ import coil3.request.ImageRequest
 import coil3.size.Dimension
 import coil3.size.Size
 import com.bennybar.luli_for_reddit.nav.LocalNavigator
+import com.bennybar.luli_for_reddit.app
+import com.bennybar.luli_for_reddit.settings.TopBarMode
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onGloballyPositioned
+import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 
 // Shared Material 3 "Bloom" building blocks for the feed / home screens
@@ -171,6 +187,19 @@ fun rememberSizedRequest(url: String?, widthPx: Int, standIn: String? = null): I
     }
 }
 
+/**
+ * A Coil request for [url] decoded to cover a [widthPx] × [heightPx] box (cropped to it).
+ * A subreddit banner is far wider than its box: decoded to the width alone, too few rows
+ * were left for the box's height and it was stretched blurry (Reddit feedback, r/Howtomen).
+ */
+@Composable
+fun rememberCoverRequest(url: String?, widthPx: Int, heightPx: Int): ImageRequest? {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    return remember(url, widthPx, heightPx) {
+        url?.let { ImageRequest.Builder(context).data(it).size(widthPx, heightPx).scale(coil3.size.Scale.FILL).build() }
+    }
+}
+
 /** Haptics with Flutter's Android mapping (HapticFeedback.* → View constants). */
 object Haptics {
     fun medium(view: View) = view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
@@ -236,11 +265,16 @@ fun LetterAvatar(
             // Always a still image: some subreddit icons are animated GIFs,
             // and every animated avatar redraws the list on its own 25–33fps
             // clock, out of step with the scroll, which drops frames.
+            // The icon this avatar last showed: when its URL changes for the same owner (a
+            // Home card's icon once the full post comes), it stays until the new one is in.
+            // A list row reused for another post starts afresh, so it's never another's icon.
+            var shown by remember { mutableStateOf<String?>(null) }
             val request = remember(imageUrl, px) {
                 ImageRequest.Builder(context).data(imageUrl)
                     .size(Size(Dimension(px * 2), Dimension.Undefined))
                     .decoderFactory(coil3.decode.BitmapFactoryDecoder.Factory())
                     .memoryCacheKeyExtra("still", "1")
+                    .apply { shown?.takeIf { it != imageUrl }?.let { placeholderMemoryCacheKey(coil3.memory.MemoryCache.Key(it, mapOf("still" to "1"))) } }
                     .build()
             }
             AsyncImage(
@@ -248,6 +282,7 @@ fun LetterAvatar(
                 contentDescription = null,
                 contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                 modifier = Modifier.size(size),
+                onSuccess = { shown = imageUrl },
             )
         } else {
             Text(
@@ -285,6 +320,221 @@ fun BloomTopBar(
     // The page's big header (#247, see rememberPageHeader): the title starts big under the
     // buttons and folds into the bar, as on the tabs.
     collapsing: CollapsingTitle? = null,
+    // The page's search in the bar (#247, WhatsApp's): a 🔍 among the actions that opens a
+    // field across the bar, in place of a full-width box under the title.
+    search: BarSearch? = null,
+) {
+    if (search == null) {
+        BloomTopBarRow(title, actions, titleContent, showBack, navigation, collapsing)
+        return
+    }
+    androidx.activity.compose.BackHandler(enabled = search.open) { search.close() }
+    LaunchedEffect(search.open) { if (search.open) collapsing?.fold() }
+    // Settings › Top bar › Full: the page's bar is the tabs' Full one (#285), a round search
+    // bar between the ☰ / ← and the page's buttons, in place of its title.
+    val full = collapsing == null && titleContent == null &&
+        app.settings.state.collectAsStateWithLifecycle().value.topBarMode == TopBarMode.FULL
+    Box {
+        if (full) {
+            FullSearchBar(
+                search.placeholder,
+                onClick = { search.open = true },
+                pillModifier = Modifier.onGloballyPositioned { search.origin = it.boundsInRoot() },
+                showBack = showBack,
+                navigation = navigation,
+                actions = actions,
+            )
+        } else {
+            BloomTopBarRow(title, {
+                IconButton(
+                    onClick = { search.open = true },
+                    // Where the field grows from (#285).
+                    modifier = Modifier.onGloballyPositioned { search.origin = it.boundsInRoot() },
+                    shapes = IconButtonDefaults.shapes(),
+                ) { Icon(SearchIcon, search.placeholder) }
+                actions()
+            }, titleContent, showBack, navigation, collapsing)
+        }
+        BarSearchRow(search, collapsing != null, full)
+    }
+}
+
+/**
+ * The Full bar on a page (#285): its ☰ / ←, the round search bar as the tabs' with
+ * [placeholder] in the middle ([pillModifier] on the bar, [textModifier] on its words), and
+ * the page's buttons.
+ */
+@Composable
+fun FullSearchBar(
+    placeholder: String,
+    onClick: () -> Unit,
+    pillModifier: Modifier = Modifier,
+    textModifier: Modifier = Modifier,
+    showBack: Boolean = true,
+    navigation: (@Composable () -> Unit)? = null,
+    actions: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {},
+) {
+    val cs = MaterialTheme.colorScheme
+    val nav = LocalNavigator.current
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .background(cs.surface)
+            .windowInsetsPadding(TopAppBarDefaults.windowInsets.add(WindowInsets(top = 2.dp)))
+            .height(64.dp)
+            .padding(horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (navigation != null) navigation()
+        else if (showBack && LocalSideBar.current != null) SideBarButton()
+        else if (showBack) IconButton(onClick = { nav.pop() }, shapes = IconButtonDefaults.shapes()) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") }
+        Surface(
+            Modifier
+                .weight(1f)
+                .padding(horizontal = 4.dp)
+                .height(56.dp)
+                .then(pillModifier),
+            shape = CircleShape,
+            color = cs.surfaceContainerHigh,
+        ) {
+            Box(Modifier.fillMaxSize().clickable(onClickLabel = placeholder, onClick = onClick), contentAlignment = Alignment.Center) {
+                Text(placeholder, textModifier, color = cs.onSurfaceVariant, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        actions()
+    }
+}
+
+/**
+ * A page's search in its top bar (#247): [open] while its field shows across the bar,
+ * [query] the page's own filter text, cleared on close.
+ */
+@androidx.compose.runtime.Stable
+class BarSearch internal constructor(
+    val placeholder: String,
+    private val queryState: androidx.compose.runtime.MutableState<String>,
+    private val openState: androidx.compose.runtime.MutableState<Boolean>,
+) {
+    var open: Boolean
+        get() = openState.value
+        set(v) { openState.value = v }
+    var query: String
+        get() = queryState.value
+        set(v) { queryState.value = v }
+
+    /** The 🔍 (or the Full bar's search bar), in the window: where the field grows from (#285). */
+    internal var origin by mutableStateOf<androidx.compose.ui.geometry.Rect?>(null)
+
+    fun close() {
+        open = false
+        query = ""
+    }
+}
+
+/** [query] is the page's filter text; the field stays open across a rotation while it has some. */
+@Composable
+fun rememberBarSearch(placeholder: String, query: androidx.compose.runtime.MutableState<String>): BarSearch {
+    val open = androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(query.value.isNotEmpty()) }
+    return remember(placeholder, query, open) { BarSearch(placeholder, query, open) }
+}
+
+/**
+ * The field across the bar's button row, as WhatsApp's (#285): a filled pill with its ←
+ * inside, growing out of the 🔍 where it is (or the Full bar's search bar, [full]) and
+ * shrinking back into it.
+ */
+@Composable
+private fun BarSearchRow(search: BarSearch, collapsing: Boolean, full: Boolean) {
+    val cs = MaterialTheme.colorScheme
+    val p by androidx.compose.animation.core.animateFloatAsState(
+        if (search.open) 1f else 0f,
+        androidx.compose.animation.core.tween(300, easing = androidx.compose.animation.core.CubicBezierEasing(0.2f, 0f, 0f, 1f)),
+        label = "barSearch",
+    )
+    if (!search.open && p == 0f) return
+    val row = if (collapsing) {
+        // As CollapsingTitleBar's row: 10dp under the status bar, 48dp tall.
+        Modifier.statusBarsPadding().padding(top = 10.dp).height(48.dp)
+    } else {
+        Modifier.windowInsetsPadding(TopAppBarDefaults.windowInsets.add(WindowInsets(top = 2.dp))).height(64.dp)
+    }
+    // The row in the window, to place the pill's start at the 🔍.
+    var me by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+    val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    LaunchedEffect(search.open) { if (search.open) focus.requestFocus() else focusManager.clearFocus() }
+    Box(Modifier.fillMaxWidth().then(row).onGloballyPositioned { me = it.boundsInRoot() }) {
+        // Over the bar's title and buttons.
+        Box(Modifier.matchParentSize().graphicsLayer { alpha = (p * 2f).coerceAtMost(1f) }.background(cs.surface))
+        val pillHeight = if (full) 56.dp else 48.dp // the Full bar's search bar's height; else WhatsApp's
+        Box(
+            Modifier
+                .layout { measurable, constraints ->
+                    val w = constraints.maxWidth.toFloat()
+                    val h = constraints.maxHeight.toFloat()
+                    val margin = 8.dp.toPx()
+                    val ph = pillHeight.toPx()
+                    val to = androidx.compose.ui.geometry.Rect(margin, (h - ph) / 2, w - margin, (h + ph) / 2)
+                    val origin = search.origin
+                    val base = me
+                    val from = if (origin != null && base != null) origin.translate(-base.left, -base.top)
+                    else androidx.compose.ui.geometry.Rect(w - margin - 48.dp.toPx(), (h - 48.dp.toPx()) / 2, w - margin, (h + 48.dp.toPx()) / 2)
+                    val r = androidx.compose.ui.geometry.lerp(from, to, p)
+                    val placeable = measurable.measure(
+                        androidx.compose.ui.unit.Constraints.fixed(r.width.roundToInt().coerceAtLeast(0), r.height.roundToInt().coerceAtLeast(0)),
+                    )
+                    layout(constraints.maxWidth, constraints.maxHeight) { placeable.place(r.left.roundToInt(), r.top.roundToInt()) }
+                }
+                .clip(CircleShape)
+                .background(cs.surfaceContainerHigh),
+        ) {
+            // Laid out at the open width, so nothing reflows as the pill grows; it fades in, at
+            // once from the Full bar's search bar (already about this size), else once it's wide.
+            val width = with(LocalDensity.current) { ((me?.width ?: 0f).toDp() - 16.dp).coerceAtLeast(0.dp) }
+            val fadeFrom = if (full) 0.1f else 0.4f
+            Row(
+                Modifier
+                    .fillMaxHeight()
+                    .wrapContentWidth(Alignment.Start, unbounded = true)
+                    .width(width)
+                    .graphicsLayer { alpha = ((p - fadeFrom) / 0.4f).coerceIn(0f, 1f) }
+                    .padding(start = 4.dp, end = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = { search.close() }, shapes = IconButtonDefaults.shapes()) {
+                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Close search")
+                }
+                Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                    if (search.query.isEmpty()) Text(search.placeholder, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    androidx.compose.foundation.text.BasicTextField(
+                        value = search.query,
+                        onValueChange = { search.query = it },
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(color = cs.onSurface),
+                        cursorBrush = androidx.compose.ui.graphics.SolidColor(cs.primary),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        modifier = Modifier.fillMaxWidth().focusRequester(focus),
+                    )
+                }
+                if (search.query.isNotEmpty()) {
+                    IconButton(onClick = { search.query = "" }) { Icon(androidx.compose.material.icons.Icons.Rounded.Close, "Clear") }
+                } else {
+                    Spacer(Modifier.width(12.dp))
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BloomTopBarRow(
+    title: String,
+    actions: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit,
+    titleContent: (@Composable () -> Unit)?,
+    showBack: Boolean,
+    navigation: (@Composable () -> Unit)?,
+    collapsing: CollapsingTitle?,
 ) {
     val nav = LocalNavigator.current
     if (collapsing != null && titleContent == null) {
@@ -337,15 +587,17 @@ fun PillTextField(
     trailing: (@Composable () -> Unit)? = null,
     onSearch: ((String) -> Unit)? = null,
     singleLine: Boolean = true,
-    leadingChip: (@Composable () -> Unit)? = null, // in place of the icon: a tag on the search (#271)
+    // In place of the icon: the search page's ← (#285) and a tag on the search (#271).
+    leadingContent: (@Composable () -> Unit)? = null,
+    placeholderModifier: Modifier = Modifier,
 ) {
     val cs = MaterialTheme.colorScheme
     TextField(
         value = value,
         onValueChange = onValueChange,
         modifier = modifier,
-        placeholder = { Text(placeholder, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-        leadingIcon = leadingChip ?: { Icon(leading, null) },
+        placeholder = { Text(placeholder, placeholderModifier, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        leadingIcon = leadingContent ?: { Icon(leading, null) },
         trailingIcon = trailing,
         singleLine = singleLine,
         // A capsule at any height: a 28dp radius on the search screen's taller
@@ -368,7 +620,7 @@ fun PillTextField(
  * field, 60dp tall with its icon and text where the field has them (#115).
  */
 @Composable
-fun SearchPill(label: String, onClick: () -> Unit, modifier: Modifier = Modifier, icon: ImageVector = SearchIcon) {
+fun SearchPill(label: String, onClick: () -> Unit, modifier: Modifier = Modifier, icon: ImageVector = SearchIcon, labelModifier: Modifier = Modifier) {
     val cs = MaterialTheme.colorScheme
     GlassSurface(modifier) {
         Row(
@@ -377,7 +629,7 @@ fun SearchPill(label: String, onClick: () -> Unit, modifier: Modifier = Modifier
         ) {
             Icon(icon, null, tint = cs.onSurfaceVariant)
             Spacer(Modifier.width(16.dp))
-            Text(label, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(label, labelModifier, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }

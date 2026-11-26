@@ -56,7 +56,7 @@ import com.bennybar.luli_for_reddit.app
 import com.bennybar.luli_for_reddit.core.routeForRedditUrl
 import com.bennybar.luli_for_reddit.core.timeAgo
 import com.bennybar.luli_for_reddit.feature.feed.BloomTopBar
-import com.bennybar.luli_for_reddit.feature.feed.PillTextField
+import com.bennybar.luli_for_reddit.feature.feed.rememberBarSearch
 import com.bennybar.luli_for_reddit.feature.markdown.RedditMarkdown
 import com.bennybar.luli_for_reddit.nav.LocalNavigator
 import com.bennybar.luli_for_reddit.nav.Route
@@ -71,7 +71,11 @@ fun SummariesScreen() {
     val cs = MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
     val items by app.summaries.items.collectAsStateWithLifecycle()
-    var query by rememberSaveable { mutableStateOf("") }
+    val queryState = rememberSaveable { mutableStateOf("") }
+    val query by queryState
+    // Search lives in the bar: with Expandable a 🔍 that opens a field across it (#247), with
+    // the Full bar the tabs' round search bar (#285).
+    val barSearch = rememberBarSearch("Search summaries", queryState)
     val shown = remember(items, query) {
         val q = query.trim().lowercase()
         if (q.isEmpty()) items
@@ -118,7 +122,7 @@ fun SummariesScreen() {
                     },
                 )
             } else {
-                BloomTopBar("Summaries", actions = {
+                BloomTopBar("Summaries", search = barSearch.takeIf { items.size > 3 }, actions = {
                     if (items.isNotEmpty()) {
                         IconButton(onClick = { selected = emptyList() }) { Icon(Icons.Rounded.Checklist, "Select") }
                     }
@@ -128,14 +132,6 @@ fun SummariesScreen() {
         containerColor = cs.surface,
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(top = padding.calculateTopPadding())) {
-            if (items.size > 3) {
-                PillTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    placeholder = "Search summaries",
-                    modifier = Modifier.fillMaxWidth().padding(start = 12.dp, top = 8.dp, end = 12.dp, bottom = 4.dp),
-                )
-            }
             when {
                 items.isEmpty() -> Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
                     Text(

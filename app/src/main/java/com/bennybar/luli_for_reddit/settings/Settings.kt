@@ -11,6 +11,8 @@ import androidx.compose.material.icons.outlined.Settings as SettingsIcon // not 
 import androidx.compose.material.icons.outlined.Spa
 import androidx.compose.material.icons.outlined.VideoLibrary
 import androidx.compose.material.icons.outlined.ViewAgenda
+import androidx.compose.material.icons.outlined.ViewDay
+import androidx.compose.material.icons.rounded.TableRows
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DoNotDisturbOn
 import androidx.compose.material.icons.rounded.ArrowDownward
@@ -80,6 +82,17 @@ enum class HeaderHeight(val label: String, val description: String) {
     FOLDED("Folded", "Always the small bar, the title in it"),
     MEDIUM("Medium", "The big title under the bar's buttons"),
     TALL("Tall", "More room above the big title, as in 2.0.96"),
+}
+
+/**
+ * How round feed posts' cards and media are (#283): [factor] scales each corner's radius.
+ * Persisted by index (never reorder).
+ */
+enum class CornerRoundness(val label: String, val description: String, val factor: Float) {
+    ROUND("Round", "Soft, round corners, as designed", 1f),
+    MEDIUM("Medium", "Less round", 0.6f),
+    SMALL("Small", "Slightly rounded: photos keep more of their corners", 0.3f),
+    SQUARE("Square", "No rounding", 0f),
 }
 
 /**
@@ -169,10 +182,19 @@ enum class PostDisplay(val label: String, val icon: ImageVector) {
     MINI("Mini cards", Icons.AutoMirrored.Rounded.ViewList),
     CALM("Calm", Icons.Rounded.Spa),
     CALM_CARDS("Calm cards", Icons.Outlined.Spa),
+    // #284, after Sync for Reddit: appended, as the setting is stored by index.
+    COMPACT("Compact", Icons.Rounded.TableRows),
+    COMPACT_CARDS("Compact cards", Icons.Outlined.ViewDay),
     ;
 
     /** Both Calm layouts share the Calm post view and the ⋮-sheet read toggle. */
     val isCalm: Boolean get() = this == CALM || this == CALM_CARDS
+
+    /** The card has its own read toggle; the others offer it in the ⋮ sheet. */
+    val readToggleOnCard: Boolean get() = this == LARGE || this == CARD || this == MINI
+
+    /** Shows the poster's picture, so it asks for posters' pictures (as Settings › Poster's picture). */
+    val showsPosters: Boolean get() = this == COMPACT_CARDS
 }
 
 /** What a swipe on a post or comment does. Persisted by [key] (Flutter's enum name). */
@@ -234,7 +256,7 @@ data class Settings(
     val dimRead: Boolean = true, // read posts dim at all (#106); off: history is still kept, nothing fades
     val subredditIcons: Boolean = true, // cards show the subreddit's icon (else its first letter)
     val postAvatars: Boolean = false, // the poster's picture on the subreddit icon (#270): one more request per page
-    val subredditPrefix: Boolean = true, // subreddit names show as "r/name" (else just "name", #97); display only
+    val subredditPrefix: Boolean = true, // subreddit and user names show as "r/name" and "u/name" (else just "name", #97, #289); display only
     val sideBarUserPrefix: Boolean = true, // the side bar shows your name as "u/name" (else just "name", #167)
     val markReadOnScroll: Boolean = false, // a post scrolled past counts as read
     // What swiping does: "start" = from the start edge (rightward in LTR).
@@ -320,6 +342,7 @@ data class Settings(
     val resumeThreads: Boolean = true, // reopening a thread scrolls back to where you left off (#179); off: from the top (#269)
     val topBarMode: TopBarMode = TopBarMode.EXPANDABLE, // Posts-screen action layout
     val headerHeight: HeaderHeight = HeaderHeight.MEDIUM, // the Expandable bar's open header (#240)
+    val cornerRoundness: CornerRoundness = CornerRoundness.ROUND, // feed posts' cards and media (#283)
     // The top bar menu panel's buttons and order, per mode (#108).
     val topBarMenuExpandable: List<TopBarMenuEntry> = TopBarMenuItem.parse(null, TopBarMode.EXPANDABLE),
     val topBarMenuFull: List<TopBarMenuEntry> = TopBarMenuItem.parse(null, TopBarMode.FULL),

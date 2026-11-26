@@ -1,5 +1,24 @@
 package com.bennybar.luli_for_reddit.feature.feed
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.material3.FilledTonalIconToggleButton
+import androidx.compose.material3.Surface
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.unit.em
+import kotlinx.coroutines.delay
 import androidx.compose.foundation.background
 import android.app.Activity
 import android.content.ContextWrapper
@@ -11,6 +30,8 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.luminance
@@ -24,6 +45,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.bennybar.luli_for_reddit.settings.HeaderHeight
 import com.bennybar.luli_for_reddit.settings.TopBarMode
+import com.bennybar.luli_for_reddit.nav.searchMorphSource
+import com.bennybar.luli_for_reddit.nav.searchMorphSourceText
 import com.bennybar.luli_for_reddit.feature.home.SideBarButton
 import com.bennybar.luli_for_reddit.feature.home.LocalSideBar
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
@@ -35,6 +58,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.foundation.shape.CircleShape
+import com.bennybar.luli_for_reddit.feature.media.opensPicture
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.offset
@@ -129,7 +153,7 @@ import kotlinx.coroutines.launch
 
 /** A subreddit's about info (header + about sheet). */
 class SubredditAboutViewModel(private val name: String) : ViewModel() {
-    private val _about = MutableStateFlow<Async<Subreddit>>(Async.Loading)
+    private val _about = MutableStateFlow<Async<Subreddit>>(seen[name.lowercase()]?.let { Async.Data(it) } ?: Async.Loading)
     val about: StateFlow<Async<Subreddit>> = _about
 
     /** Optimistic subscribe state. */
@@ -137,26 +161,38 @@ class SubredditAboutViewModel(private val name: String) : ViewModel() {
 
     init {
         viewModelScope.launch {
-            _about.value = try {
-                Async.Data(
-                    app.repository.getSubredditAbout(name).also {
-                        if (app.settings.value.trackHistory) app.recentSubreddits.visit(it)
-                    },
-                )
+            try {
+                val fresh = app.repository.getSubredditAbout(name).also {
+                    if (app.settings.value.trackHistory) app.recentSubreddits.visit(it)
+                }
+                seen[name.lowercase()] = fresh
+                if ((_about.value as? Async.Data)?.value != fresh) _about.value = Async.Data(fresh)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Async.Error(e)
+                // Keep the header from earlier this session rather than drop it.
+                if (_about.value !is Async.Data) _about.value = Async.Error(e)
             }
         }
     }
 
-    fun toggleSub(s: Subreddit, currentlySubscribed: Boolean) {
+    companion object {
+        /**
+         * Abouts seen this session: a community opened again paints its header at once, then
+         * refreshes it. On iPhone it slotted in above the cached posts a moment later and
+         * pushed them down (measured on the simulator); the same order holds here.
+         */
+        private val seen = java.util.concurrent.ConcurrentHashMap<String, Subreddit>()
+    }
+
+    /** [done]: called once Reddit took it (the "Joined r/x" pill, #277), never on a failure. */
+    fun toggleSub(s: Subreddit, currentlySubscribed: Boolean, done: ((Boolean) -> Unit)? = null) {
         val next = !currentlySubscribed
         subOverride.value = next
         app.scope.launch {
             try {
                 app.repository.setSubscribed(s.name, next)
+                done?.invoke(next)
             } catch (e: Exception) {
                 subOverride.value = currentlySubscribed
                 app.navigatorOrNull?.showActionError(if (next) "join" else "leave", e)
@@ -178,6 +214,9 @@ fun SubredditScreen(name: String) {
     val listState = rememberFeedListState()
     var refreshRequests by remember { mutableIntStateOf(0) } // the Refresh floating button
     var hideReadRequests by remember { mutableIntStateOf(0) } // the Hide read posts floating button
+    // "Joined r/x" / "Left r/x" after the banner header's + / ✓ (#277), for a few seconds.
+    var joinPill by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(joinPill) { if (joinPill != null) { delay(3_000); joinPill = null } }
     // The top bar hides and comes back as on Home (#112).
     val bar = rememberHidingBar(listState)
     // Reloading (a sort change, too) starts a new list from the top: the bar comes back with it.
@@ -241,19 +280,46 @@ fun SubredditScreen(name: String) {
                     when (val a = about) {
                         Async.Loading -> LinearProgressIndicator(Modifier.fillMaxWidth().height(4.dp))
                         is Async.Error -> {}
-                        is Async.Data -> if (bannerHeader) SubredditAbout(a.value, vm) else SubredditHeader(a.value, vm)
+                        is Async.Data -> if (bannerHeader) SubredditAbout(a.value) else SubredditHeader(a.value, vm)
                     }
                 },
                 floatingChipsY = if (!settings.floatingChips) null else bar::chipsY,
             )
+            // Above the floating button, in the theme's inverse colours (#277).
+            AnimatedVisibility(
+                joinPill != null,
+                Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 92.dp),
+                enter = fadeIn() + slideInVertically { it / 2 },
+                exit = fadeOut() + slideOutVertically { it / 2 },
+            ) {
+                var last by remember { mutableStateOf("") }
+                joinPill?.let { last = it }
+                Surface(shape = CircleShape, color = MaterialTheme.colorScheme.inverseSurface, contentColor = MaterialTheme.colorScheme.inverseOnSurface, shadowElevation = 6.dp) {
+                    Text(last, Modifier.padding(horizontal = 18.dp, vertical = 10.dp), style = MaterialTheme.typography.labelLarge)
+                }
+            }
             HidingTopBar(bar) {
                 if (bannerHeader) {
-                    BannerTitleBar(collapsing, name, (about as? Async.Data)?.value, onSearch = { nav.push(Route.Search(subreddit = name)) }, onMenu = openMenu)
+                    BannerTitleBar(
+                        collapsing, name, (about as? Async.Data)?.value, vm,
+                        onSearch = { nav.push(Route.Search(subreddit = name)) }, onMenu = openMenu,
+                        onJoined = { joined -> joinPill = if (joined) "Joined ${subredditName("r/$name")}" else "Left ${subredditName("r/$name")}" },
+                    )
+                } else if (settings.topBarMode == TopBarMode.FULL) {
+                    // The Full bar, as on the tabs (#285): a round search bar that grows into
+                    // the search page's field, its words with it.
+                    FullSearchBar(
+                        "Search in r/$name",
+                        onClick = { nav.push(Route.Search(subreddit = name)) },
+                        pillModifier = Modifier.searchMorphSource(),
+                        textModifier = Modifier.searchMorphSourceText(),
+                        actions = { IconButton(onClick = openMenu) { Icon(Icons.Rounded.MoreHoriz, "More") } },
+                    )
                 } else BloomTopBar(
                     subredditName(name),
                     // Search, and the rest in the ⋯ menu: a row of five cropped the name (#112).
                     actions = {
-                        IconButton(onClick = { nav.push(Route.Search(subreddit = name)) }) { Icon(SearchIcon, "Search") }
+                        IconButton(onClick = { nav.push(Route.Search(subreddit = name)) }, Modifier.searchMorphSource()) { Icon(SearchIcon, "Search") }
                         IconButton(onClick = openMenu) { Icon(Icons.Rounded.MoreHoriz, "More") }
                     },
                 )
@@ -266,7 +332,9 @@ fun SubredditScreen(name: String) {
 private val BANNER_EXTRA = 150.dp
 private const val BANNER = 136f // the banner's height under the status bar, dp
 private val ICON = 76.dp // the icon over the banner's foot (#268: bigger), 30dp in the bar
-private val NAME_GAP = 12.dp // the name under the banner's foot (#268: a little lower)
+private val NAME_GAP = 10.dp // the name under the banner's foot (#268: a little lower)
+private val ICON_OVER = 26.dp // how much of the icon is over the banner's foot: about a third (#277)
+private val JOIN = 40.dp // the + / ✓ button by the name (#277)
 private val BAR_ROW_TOP = 10.dp // the bar's row, under the status bar (CollapsingTitle's)
 
 /**
@@ -278,7 +346,10 @@ private val BAR_ROW_TOP = 10.dp // the bar's row, under the status bar (Collapsi
  * the bar's colour; the icon and name slide into the bar together.
  */
 @Composable
-private fun BannerTitleBar(state: CollapsingTitle, name: String, about: Subreddit?, onSearch: () -> Unit, onMenu: () -> Unit) {
+private fun BannerTitleBar(
+    state: CollapsingTitle, name: String, about: Subreddit?, vm: SubredditAboutViewModel,
+    onSearch: () -> Unit, onMenu: () -> Unit, onJoined: (Boolean) -> Unit,
+) {
     val cs = MaterialTheme.colorScheme
     val nav = LocalNavigator.current
     val sideBar = LocalSideBar.current != null
@@ -289,6 +360,10 @@ private fun BannerTitleBar(state: CollapsingTitle, name: String, about: Subreddi
     // A light banner gets dark icons, on it and in the status bar (#268); a picture's
     // lightness is known once it's loaded, the band's until then.
     var imageLight by remember(about?.bannerUrl) { mutableStateOf<Boolean?>(null) }
+    // Reddit's desktop banners are 4000 px wide and as little as 128 tall: filling this box
+    // shows a sliver of one blown up several times (Reddit feedback, r/Howtomen). One that
+    // would need more than 1.5× becomes a soft wash of its own colours, not a blurry zoom.
+    var soft by remember(about?.bannerUrl) { mutableStateOf(false) }
     val light = imageLight ?: (band.luminance() > 0.5f)
     BannerStatusBar(light = light, shown = { state.progress < 0.5f })
     val onBanner = androidx.compose.ui.graphics.lerp(if (light) Color.Black.copy(alpha = 0.87f) else Color.White, cs.onSurface, p)
@@ -298,7 +373,8 @@ private fun BannerTitleBar(state: CollapsingTitle, name: String, about: Subreddi
     // Gone, not covered, once folded: a covered banner left a line under the status bar (#268).
     val bannerAlpha = 1f - (p * 1.2f).coerceAtMost(1f)
     val scope = rememberCoroutineScope()
-    val request = about?.bannerUrl?.let { rememberSizedRequest(it, feedDecodeWidth()) }
+    val bannerPx = with(LocalDensity.current) { (top + BANNER.dp).roundToPx() }
+    val request = rememberCoverRequest(about?.bannerUrl, feedDecodeWidth(), bannerPx)
     // The round buttons' places in the header, for the blurred banner behind them.
     var root by remember { mutableStateOf<LayoutCoordinates?>(null) }
     val holes = remember { mutableStateMapOf<Int, Rect>() }
@@ -319,20 +395,24 @@ private fun BannerTitleBar(state: CollapsingTitle, name: String, about: Subreddi
                         model = request,
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
-                        onSuccess = { s -> scope.launch { imageLight = isLight(s.result.image.toBitmap()) } },
+                        modifier = Modifier.fillMaxSize().then(if (soft) Modifier.blur(30.dp) else Modifier),
+                        onSuccess = { s ->
+                            soft = bannerPx > s.result.image.height * 1.5f
+                            scope.launch { imageLight = isLight(s.result.image.toBitmap()) }
+                        },
                     )
                 }
             }
             // The banner again, blurred, only inside the buttons' circles (#268).
             if (request != null && holes.isNotEmpty()) {
-                val circles = holes.values.toList()
+                val shapes = holes.values.toList()
                 Box(
                     Modifier
                         .fillMaxWidth()
                         .height(top + BANNER.dp)
                         .drawWithContent {
-                            val path = Path().apply { circles.forEach { addOval(it) } }
+                            // Each a circle or a pill: rounded by half its height.
+                            val path = Path().apply { shapes.forEach { addRoundRect(RoundRect(it, CornerRadius(it.height / 2))) } }
                             clipPath(path) { this@drawWithContent.drawContent() }
                         }
                         .graphicsLayer { translationY = -bannerShift.toPx(); alpha = bannerAlpha },
@@ -349,7 +429,8 @@ private fun BannerTitleBar(state: CollapsingTitle, name: String, about: Subreddi
         // The icon and name, from over the banner's foot into the bar after ←.
         val iconSize = lerp(ICON, 30.dp, p)
         val iconX = lerp(16.dp, 58.dp, p)
-        val iconY = lerp(top + BANNER.dp - ICON + 24.dp, top + BAR_ROW_TOP + 9.dp, p)
+        // About a third of it over the banner's foot (#277), the rest beside the name.
+        val iconY = lerp(top + BANNER.dp - ICON_OVER, top + BAR_ROW_TOP + 9.dp, p)
         // The ring is a disc behind the icon, not a border over it: a border let the
         // picture's edge show around it (#268).
         val ring = lerp(3.dp, 0.dp, p)
@@ -360,21 +441,46 @@ private fun BannerTitleBar(state: CollapsingTitle, name: String, about: Subreddi
                 .background(cs.surface, CircleShape)
                 .padding(ring),
         ) {
-            LetterAvatar(name, iconSize, cs.secondaryContainer, cs.onSecondaryContainer, imageUrl = about?.iconUrl)
+            // A tap opens the picture full screen (#279); a letter avatar has none.
+            val icon = about?.iconUrl
+            LetterAvatar(
+                name, iconSize, cs.secondaryContainer, cs.onSecondaryContainer, imageUrl = icon,
+                modifier = if (icon != null) Modifier.opensPicture(icon, "r/$name") else Modifier,
+            )
         }
         val nameX = lerp(16.dp + ICON + 12.dp, iconX + iconSize + 10.dp, p)
         Text(
             subredditName("r/$name"),
             Modifier
                 .offset(nameX, nameTop)
-                // Clear of the search and ⋯ buttons once in the bar.
-                .widthIn(max = width - nameX - lerp(16.dp, 104.dp, p)),
+                // Clear of the + / ✓ button open, of the search and ⋯ buttons once in the bar.
+                .widthIn(max = width - nameX - lerp(16.dp + JOIN + 8.dp, 104.dp, p)),
             fontSize = (26f - 8f * p).sp,
             fontWeight = FontWeight.ExtraBold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
         if (about != null) {
+            // Join as an icon by the name (#277): + to join, ✓ to leave; it never cuts the name.
+            val override by vm.subOverride.collectAsStateWithLifecycle()
+            val subscribed = override ?: about.userIsSubscriber ?: false
+            val label = subredditName("r/$name")
+            FilledTonalIconToggleButton(
+                checked = subscribed,
+                onCheckedChange = { vm.toggleSub(about, subscribed, onJoined) },
+                modifier = Modifier
+                    .offset(width - 16.dp - JOIN, nameTop)
+                    .size(JOIN)
+                    .graphicsLayer { alpha = (1f - p * 2.5f).coerceAtLeast(0f) }
+                    .semantics { contentDescription = if (subscribed) "Leave $label" else "Join $label" },
+                enabled = p < 0.4f,
+            ) {
+                AnimatedContent(
+                    subscribed,
+                    transitionSpec = { (scaleIn(initialScale = 0.5f) + fadeIn()) togetherWith (scaleOut(targetScale = 0.5f) + fadeOut()) },
+                    label = "join",
+                ) { joined -> Icon(if (joined) Icons.Rounded.Check else Icons.Rounded.Add, null) }
+            }
             Text(
                 "${compactNumber(about.subscribers)} members",
                 Modifier.offset(16.dp + ICON + 12.dp, nameTop + 36.dp).graphicsLayer { alpha = (1f - p * 2.5f).coerceAtLeast(0f) },
@@ -388,15 +494,18 @@ private fun BannerTitleBar(state: CollapsingTitle, name: String, about: Subreddi
                 val tint = (if (light) Color.White.copy(alpha = 0.3f) else Color.Black.copy(alpha = 0.25f)).let { it.copy(alpha = it.alpha * (1f - p)) }
                 fun back(i: Int) = Modifier
                     .onGloballyPositioned { c -> root?.takeIf { it.isAttached }?.let { r -> holes[i] = r.localBoundingBoxOf(c) } }
-                    .background(tint, CircleShape)
+                    .background(tint, CircleShape) // a circle, or a pill when wider
                 Box(back(0)) {
                     if (sideBar) SideBarButton()
                     else IconButton(onClick = { nav.pop() }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") }
                 }
                 Spacer(Modifier.weight(1f))
-                IconButton(onClick = onSearch, modifier = back(1)) { Icon(SearchIcon, "Search") }
-                Spacer(Modifier.width(6.dp))
-                IconButton(onClick = onMenu, modifier = back(2)) { Icon(Icons.Rounded.MoreHoriz, "More") }
+                // Search and ⋯ share one pill, spaced as on Posts (#282).
+                Row(back(1)) {
+                    // What the search page's field grows out of (#285).
+                    IconButton(onClick = onSearch, Modifier.searchMorphSource()) { Icon(SearchIcon, "Search") }
+                    IconButton(onClick = onMenu) { Icon(Icons.Rounded.MoreHoriz, "More") }
+                }
             }
         }
     }
@@ -438,35 +547,36 @@ private suspend fun isLight(bitmap: Bitmap): Boolean = withContext(Dispatchers.D
     sum / n > 0.5
 }
 
-/** With the banner header (#257): what's left of the header, the description in a card (3 lines, then Show all) and Join. */
+/**
+ * With the banner header (#257): the description in a card, 3 lines then Show all. Join is
+ * by the name in the header (#277), so without a description there's no card (#278).
+ */
 @Composable
-private fun SubredditAbout(s: Subreddit, vm: SubredditAboutViewModel) {
+private fun SubredditAbout(s: Subreddit) {
     val cs = MaterialTheme.colorScheme
-    val override by vm.subOverride.collectAsStateWithLifecycle()
-    val subscribed = override ?: s.userIsSubscriber ?: false
     var open by rememberSaveable { mutableStateOf(false) }
     var long by remember { mutableStateOf(false) }
+    if (s.description.isEmpty()) {
+        Spacer(Modifier.height(4.dp))
+        return
+    }
+    // The same text size and spacing collapsed and open (#277): RedditMarkdown's.
+    val style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, lineHeight = 1.45.em)
     BloomCard(Modifier.padding(start = 10.dp, top = 4.dp, end = 10.dp, bottom = 4.dp).fillMaxWidth()) {
-        Column(Modifier.padding(start = 14.dp, top = 12.dp, end = 10.dp, bottom = 8.dp)) {
-            if (s.description.isNotEmpty()) {
-                // Reddit text, its links working, once it's all shown.
-                if (open) RedditMarkdown(s.description, color = cs.onSurfaceVariant)
-                else Text(
-                    remember(s.description) { snippetMarkdown(s.description, cs.onSurfaceVariant) },
-                    color = cs.onSurfaceVariant,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
-                    onTextLayout = { if (it.hasVisualOverflow) long = true },
-                )
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (long) TextButton(onClick = { open = !open }, contentPadding = PaddingValues(horizontal = 0.dp)) {
-                    Text(if (open) "Show less" else "Show all")
-                }
-                Spacer(Modifier.weight(1f))
-                FilledTonalToggleButton(checked = subscribed, onCheckedChange = { vm.toggleSub(s, subscribed) }) {
-                    Text(if (subscribed) "Joined" else "Join")
-                }
+        // Show all / Show less grows and shrinks the card rather than jumping (#286).
+        Column(Modifier.animateContentSize(tween(260, easing = FastOutSlowInEasing)).padding(start = 14.dp, top = 12.dp, end = 10.dp, bottom = 8.dp)) {
+            // Reddit text, its links working, once it's all shown.
+            if (open) RedditMarkdown(s.description, color = cs.onSurfaceVariant, fontSize = 15.sp)
+            else Text(
+                remember(s.description) { snippetMarkdown(s.description, cs.onSurfaceVariant) },
+                color = cs.onSurfaceVariant,
+                style = style,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+                onTextLayout = { if (it.hasVisualOverflow) long = true },
+            )
+            if (long) TextButton(onClick = { open = !open }, contentPadding = PaddingValues(horizontal = 0.dp)) {
+                Text(if (open) "Show less" else "Show all")
             }
         }
     }
@@ -479,17 +589,27 @@ private fun SubredditHeader(s: Subreddit, vm: SubredditAboutViewModel) {
     val subscribed = override ?: s.userIsSubscriber ?: false
     Column(Modifier.padding(start = 6.dp, top = 8.dp, end = 6.dp)) {
         if (s.bannerUrl != null) {
-            AsyncImage(
-                model = rememberSizedRequest(s.bannerUrl, feedDecodeWidth()),
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxWidth().height(110.dp).clip(RoundedCornerShape(20.dp)),
-            )
+            val stripPx = with(LocalDensity.current) { 110.dp.roundToPx() }
+            var soft by remember(s.bannerUrl) { mutableStateOf(false) } // as the banner header's
+            Box(Modifier.fillMaxWidth().height(110.dp).clip(RoundedCornerShape(20.dp))) {
+                AsyncImage(
+                    model = rememberCoverRequest(s.bannerUrl, feedDecodeWidth(), stripPx),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize().then(if (soft) Modifier.blur(30.dp) else Modifier),
+                    onSuccess = { r -> soft = stripPx > r.result.image.height * 1.5f },
+                )
+            }
         }
         BloomCard(Modifier.padding(start = 4.dp, top = 10.dp, end = 4.dp, bottom = 4.dp).fillMaxWidth()) {
             Column(Modifier.padding(14.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    LetterAvatar(s.name, 52.dp, cs.secondaryContainer, cs.onSecondaryContainer, imageUrl = s.iconUrl)
+                    val nav = LocalNavigator.current
+                    LetterAvatar(
+                        s.name, 52.dp, cs.secondaryContainer, cs.onSecondaryContainer, imageUrl = s.iconUrl,
+                        // A tap opens the picture full screen (#279).
+                        modifier = s.iconUrl?.let { icon -> Modifier.opensPicture(icon, s.namePrefixed) } ?: Modifier,
+                    )
                     Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {
                         Text(subredditName(s.namePrefixed), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)

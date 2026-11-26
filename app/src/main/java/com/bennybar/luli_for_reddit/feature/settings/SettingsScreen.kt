@@ -16,7 +16,6 @@ import androidx.compose.material.icons.outlined.ManageAccounts
 import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.FormatPaint
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.AccountCircle
@@ -29,6 +28,7 @@ import androidx.compose.material.icons.rounded.Tag
 import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.AlternateEmail
 import com.bennybar.luli_for_reddit.settings.HeaderHeight
+import com.bennybar.luli_for_reddit.settings.CornerRoundness
 import com.bennybar.luli_for_reddit.settings.HomeFab
 import com.bennybar.luli_for_reddit.settings.ThreadFab
 import com.bennybar.luli_for_reddit.settings.ThreadFabPosition
@@ -74,6 +74,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import com.bennybar.luli_for_reddit.feature.feed.BloomTopBar
 import com.bennybar.luli_for_reddit.feature.feed.collapsingHeader
 import com.bennybar.luli_for_reddit.feature.feed.rememberPageHeader
+import com.bennybar.luli_for_reddit.feature.feed.BarSearch
+import com.bennybar.luli_for_reddit.feature.feed.rememberBarSearch
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -153,6 +155,8 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -318,10 +322,14 @@ fun SettingsScreen(section: String? = null) {
     // as Saved and History (#268). Pushed from elsewhere (←), the plain bar.
     val sideBar = LocalSideBar.current != null
     val header = rememberPageHeader(listState).takeIf { sideBar }
+    // From the side bar, search lives in the bar: with the big header a 🔍 that opens a field
+    // across it (#247), with the Full bar the tabs' round search bar (#285).
+    val queryState = remember { mutableStateOf("") }
+    val barSearch = if (sideBar && section == null) rememberBarSearch("Search settings", queryState) else null
     Scaffold(
         Modifier.collapsingHeader(header),
         topBar = {
-            if (header != null) BloomTopBar(section ?: "Settings", collapsing = header)
+            if (header != null || barSearch != null) BloomTopBar(section ?: "Settings", collapsing = header, search = barSearch)
             else TopAppBar(
                 title = { Text(section ?: "Settings") },
                 navigationIcon = {
@@ -332,7 +340,7 @@ fun SettingsScreen(section: String? = null) {
             )
         },
     ) { padding ->
-        SettingsList(contentPadding = padding, section = section, listState = listState)
+        SettingsList(contentPadding = padding, section = section, listState = listState, barSearch = barSearch)
     }
 }
 
@@ -351,6 +359,8 @@ fun SettingsList(
     contentPadding: PaddingValues = PaddingValues(),
     section: String? = null,
     listState: LazyListState = rememberLazyListState(),
+    // The bar's search (#247): its text filters the list, and the list's own field goes.
+    barSearch: BarSearch? = null,
 ) {
     val s by app.settings.state.collectAsStateWithLifecycle()
     val ctrl = app.settings
@@ -359,7 +369,10 @@ fun SettingsList(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val cs = MaterialTheme.colorScheme
-    var query by remember { mutableStateOf("") }
+    var ownQuery by remember { mutableStateOf("") }
+    val query = barSearch?.query ?: ownQuery
+    // Appearance's group whose Preview sheet is open ("d:sub-…"), if any.
+    var previewGroup by remember { mutableStateOf<String?>(null) }
 
     // Secure-storage state, re-read after edits and account changes.
     var secureVersion by remember { mutableIntStateOf(0) }
@@ -680,32 +693,50 @@ fun SettingsList(
 
         // ---------------------------------------------------------------- Appearance
         section("Appearance")
-        // Light / dark, AMOLED, wallpaper colours, the accent and the palette style: one page (#114).
-        add(Entry("t:Theme & colours", "Theme & colours ${themeSummary(s)} dark light AMOLED black accent color colour wallpaper dynamic palette style hex") {
-            SettingTile("Theme & colours", themeSummary(s), Icons.Outlined.FormatPaint, onClick = { nav.push(Route.ThemeColors) })
+        // Every choice is made right here, not in a sheet or on another page. A group's
+        // Preview opens the sample with that group's options under it (#288): try them there.
+        // Ordered by how much each changes a post: layout, colour, text, then the rest.
+        val previewable = @Composable { key: String, title: String ->
+            SettingsSubheading(title, onPreview = { previewGroup = key })
+        }
+        add(Entry("d:sub-layout", null) { previewable("d:sub-layout", "Layout") })
+        // How posts look in feeds.
+        add(Entry("t:Post display", "Post display ${s.postDisplay.label} layout cards compact calm mini default") {
+            InlineChoice("Post layout", null, PostDisplay.entries.map { Choice(it, it.label, it.icon) }, s.postDisplay, onSelect = ctrl::setPostDisplay)
         })
-        tile("App font", s.appFont.label, Icons.Rounded.FontDownload, onClick = launch {
-            pickOption(AppFont.entries.map { PickOption(it, it.label, subtitle = it.description) }, s.appFont)?.let(ctrl::setAppFont)
+        // How round posts' cards and media are (#283).
+        add(Entry("t:Corner roundness", "Corner roundness ${s.cornerRoundness.label} round medium small square corners") {
+            InlineChoice("Corner roundness", null, CornerRoundness.entries.map { Choice(it, it.label) }, s.cornerRoundness, onSelect = ctrl::setCornerRoundness)
         })
         switch(
-            "r/ before subreddit names", "Show \"r/pics\" on posts and lists. Off: just \"pics\"",
+            "Subreddit icons", "Show each community's icon on posts instead of its first letter",
+            Icons.Rounded.Image, s.subredditIcons, ctrl::setSubredditIcons,
+        )
+        switch(
+            "Poster's picture on posts", "A small profile picture on the community's icon. One more Reddit request per page of posts",
+            Icons.Rounded.AccountCircle, s.postAvatars, ctrl::setPostAvatars,
+        )
+        switch(
+            "r/ and u/ before names", "Show \"r/pics\" and \"u/name\" on posts, comments and lists. Off: just \"pics\" and \"name\"",
             Icons.Rounded.Tag, s.subredditPrefix, ctrl::setSubredditPrefix,
         )
-        switch(
-            "u/ before your name in the side bar", "Show \"u/you\" at the top of the side bar. Off: just \"you\"",
-            Icons.Rounded.AlternateEmail, s.sideBarUserPrefix, ctrl::setSideBarUserPrefix,
-        )
-        add(Entry("appIcon", "App icon launcher home screen colour") {
-            val current = AppIcon.parse(s.appIcon)
-            SettingTile("App icon", current.label, onClick = {
-                scope.launch {
-                    val picked = pickAppIcon(current) ?: return@launch
-                    if (picked == current) return@launch
-                    ctrl.setAppIcon(picked.key)
-                    AppIcon.apply(context, picked)
-                    nav.showSnackbar("App icon changed. Your home screen can take a few seconds to update.")
-                }
-            }, leading = { AppIconPreview(current, 24.dp) })
+        // How much of a post's text feeds show (#186).
+        add(Entry("t:Post text in feeds", "Post text in feeds layout's default 2 or 3 lines 5 lines 10 lines") {
+            InlineChoice(
+                "Post text in feeds", null,
+                listOf(Choice(0, "Default"), Choice(5, "5 lines"), Choice(10, "10 lines")), s.postTextLines,
+                subtitle = "Default: the layout's 2 or 3 lines", onSelect = ctrl::setPostTextLines,
+            )
+        })
+        // Light / dark, AMOLED, wallpaper colours, the accent and the palette style (#114):
+        // the Theme & colours page's controls.
+        add(Entry("d:sub-colour", null) { previewable("d:sub-colour", "Colour") })
+        add(Entry("x:themeColors", "Theme & colours ${themeSummary(s)} dark light AMOLED black accent color colour wallpaper dynamic palette style hex mode") {
+            ThemeColorsContent(showPreview = false)
+        })
+        add(Entry("d:sub-text", null) { previewable("d:sub-text", "Text") })
+        add(Entry("t:App font", "App font ${s.appFont.label} ${AppFont.entries.joinToString(" ") { it.label }}") {
+            InlineChoice("App font", Icons.Rounded.FontDownload, AppFont.entries.map { Choice(it, it.label) }, s.appFont, subtitle = s.appFont.description, onSelect = ctrl::setAppFont)
         })
         tile("Font size", "${(s.textScale * 100).roundToInt()}% of normal", Icons.Rounded.FormatSize)
         add(Entry("fontSlider", null) {
@@ -744,9 +775,6 @@ fun SettingsList(
         add(Entry("t:Post text size", "Post text body description text size font bigger smaller") {
             TextScaleRow("Post text", s.postTextScale, ctrl::setPostTextScale)
         })
-        add(Entry("t:Comments size", "Comments text size font bigger smaller") {
-            TextScaleRow("Comments", s.commentTextScale, ctrl::setCommentTextScale)
-        })
         val defaultSizes = s.textScale == 1.0 && s.titleTextScale == 1.0 && s.postTextScale == 1.0 && s.commentTextScale == 1.0
         tile(
             "Reset text sizes",
@@ -755,41 +783,47 @@ fun SettingsList(
             enabled = !defaultSizes,
             onClick = ctrl::resetTextScales,
         )
-        divider("appearance-feeds")
-        // How posts look in feeds.
-        tile("Post display", s.postDisplay.label, s.postDisplay.icon, onClick = launch {
-            pickOption(PostDisplay.entries.map { PickOption(it, it.label, icon = it.icon) }, s.postDisplay)
-                ?.let(ctrl::setPostDisplay)
+        // Its preview is a sample thread.
+        add(Entry("d:sub-comments", null) { previewable("d:sub-comments", "Comments") })
+        add(Entry("t:Comments size", "Comments text size font bigger smaller") {
+            TextScaleRow("Comments", s.commentTextScale, ctrl::setCommentTextScale)
         })
-        // How much of a post's text feeds show (#186).
-        val textLines = listOf(PickOption(0, "Layout's default", "2 or 3 lines"), PickOption(5, "5 lines"), PickOption(10, "10 lines"))
-        tile("Post text in feeds", textLines.first { it.value == s.postTextLines }.label, Icons.AutoMirrored.Rounded.Notes, onClick = launch {
-            pickOption(textLines, s.postTextLines)?.let(ctrl::setPostTextLines)
-        })
-        switch(
-            "Subreddit icons", "Show each community's icon on posts instead of its first letter",
-            Icons.Rounded.Image, s.subredditIcons, ctrl::setSubredditIcons,
-        )
-        switch(
-            "Poster's picture on posts", "A small profile picture on the community's icon. One more Reddit request per page of posts",
-            Icons.Rounded.AccountCircle, s.postAvatars, ctrl::setPostAvatars,
-        )
+        // …and theirs the floating chips.
+        add(Entry("d:sub-chips", null) { previewable("d:sub-chips", "Floating filter chips") })
         switch(
             "Floating filter chips", "On Home, subreddits and custom feeds, show the chips under the top bar when you scroll back up",
             Icons.Rounded.FilterList, s.floatingChips, ctrl::setFloatingChips,
         )
         if (s.floatingChips) {
             // #91: the solid top-bar background of 2.0.58, or the outlined chips over the posts as before.
-            tile("Floating chips background", if (s.floatingChipsSolid) "Solid" else "Transparent", Icons.Rounded.FilterList, onClick = launch {
-                pickOption(
-                    listOf(
-                        PickOption(false, "Transparent", "Just the outlined chips, over the posts"),
-                        PickOption(true, "Solid", "On the top bar's background, so posts don't show between the chips"),
-                    ),
-                    s.floatingChipsSolid,
-                )?.let(ctrl::setFloatingChipsSolid)
+            add(Entry("t:Floating chips background", "Floating chips background transparent solid") {
+                InlineChoice(
+                    "Floating chips background", null,
+                    listOf(Choice(false, "Transparent"), Choice(true, "Solid")), s.floatingChipsSolid,
+                    subtitle = if (s.floatingChipsSolid) "On the top bar's background" else "Just the outlined chips, over the posts",
+                    onSelect = ctrl::setFloatingChipsSolid,
+                )
             })
         }
+        // What a preview can't show, last: no Preview here.
+        add(Entry("d:sub-other", null) { SettingsSubheading("Other") })
+        // A sheet that doesn't leave the page; the launcher icon isn't in the preview.
+        add(Entry("appIcon", "App icon launcher home screen colour") {
+            val current = AppIcon.parse(s.appIcon)
+            SettingTile("App icon", current.label, onClick = {
+                scope.launch {
+                    val picked = pickAppIcon(current) ?: return@launch
+                    if (picked == current) return@launch
+                    ctrl.setAppIcon(picked.key)
+                    AppIcon.apply(context, picked)
+                    nav.showSnackbar("App icon changed. Your home screen can take a few seconds to update.")
+                }
+            }, leading = { AppIconPreview(current, 24.dp) })
+        })
+        switch(
+            "u/ before your name in the side bar", "Show \"u/you\" at the top of the side bar. Off: just \"you\"",
+            Icons.Rounded.AlternateEmail, s.sideBarUserPrefix, ctrl::setSideBarUserPrefix,
+        )
         divider("appearance")
 
         // ---------------------------------------------------------------- Navigation
@@ -1388,13 +1422,13 @@ fun SettingsList(
 
     // Rows sit in rounded containers, joined until a gap ("d:"): a row's outer
     // corners are round only where the container starts or ends (#68).
-    val row = @Composable { i: Int ->
-        val e = shown[i]
+    val rowOf = @Composable { rows: List<Entry>, i: Int ->
+        val e = rows[i]
         if (e.key.startsWith("d:")) {
             e.content()
         } else {
-            val first = shown.getOrNull(i - 1)?.key?.startsWith("d:") != false
-            val last = shown.getOrNull(i + 1)?.key?.startsWith("d:") != false
+            val first = rows.getOrNull(i - 1)?.key?.startsWith("d:") != false
+            val last = rows.getOrNull(i + 1)?.key?.startsWith("d:") != false
             Column(
                 Modifier
                     .fillMaxWidth()
@@ -1411,11 +1445,12 @@ fun SettingsList(
             ) { e.content() }
         }
     }
+    val row = @Composable { i: Int -> rowOf(shown, i) }
 
     val searchField = @Composable {
         TextField(
             value = query,
-            onValueChange = { query = it },
+            onValueChange = { ownQuery = it },
             singleLine = true,
             placeholder = { Text("Search settings") },
             leadingIcon = { Icon(SearchIcon, null) },
@@ -1433,6 +1468,21 @@ fun SettingsList(
         Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) { Text("No settings found") }
     }
 
+    previewGroup?.let { group ->
+        // The sample at true size on top, the group's own options under it: each change shows
+        // at once. Built here, in the list's composition, so the rows see the live settings.
+        val rows = all.dropWhile { it.key != group }.drop(1).takeWhile { !it.key.startsWith("d:sub-") && !it.key.startsWith("h:") }
+        ModalBottomSheet(
+            onDismissRequest = { previewGroup = null },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        ) {
+            AppearancePreview(APPEARANCE_PREVIEWS.getValue(group))
+            HorizontalDivider(color = cs.outlineVariant)
+            Column(Modifier.verticalScroll(rememberScrollState()).padding(top = 8.dp, bottom = 24.dp)) {
+                rows.indices.forEach { rowOf(rows, it) }
+            }
+        }
+    }
     if (embedded) {
         Column(modifier) {
             if (section == null) searchField()
@@ -1441,7 +1491,7 @@ fun SettingsList(
         }
     } else {
         LazyColumn(modifier.fillMaxSize(), state = listState, contentPadding = contentPadding) {
-            if (section == null) item(key = "search") { searchField() }
+            if (section == null && barSearch == null) item(key = "search") { searchField() }
             items(shown.size, key = { shown[it].key }) { row(it) }
             if (q.isNotEmpty() && shown.isEmpty()) item(key = "none") { noResults() }
             item(key = "bottom") { Spacer(Modifier.height(24.dp)) }
@@ -1851,3 +1901,12 @@ private fun TextScaleRow(label: String, value: Double, onChange: (Double) -> Uni
         Slider(state = state, onValueChange = { onChange((it * 20).roundToInt() / 20.0) })
     }
 }
+
+/** Appearance's groups that have a Preview, and what it shows for each (#288). */
+private val APPEARANCE_PREVIEWS = mapOf(
+    "d:sub-layout" to PreviewKind.POST,
+    "d:sub-colour" to PreviewKind.POST,
+    "d:sub-text" to PreviewKind.POST,
+    "d:sub-comments" to PreviewKind.COMMENTS,
+    "d:sub-chips" to PreviewKind.CHIPS,
+)

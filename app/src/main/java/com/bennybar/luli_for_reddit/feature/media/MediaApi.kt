@@ -1,5 +1,6 @@
 package com.bennybar.luli_for_reddit.feature.media
 
+import com.bennybar.luli_for_reddit.ui.theme.corner
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.graphics.Shape
@@ -11,6 +12,11 @@ import androidx.compose.material3.carousel.HorizontalMultiBrowseCarousel
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterExitState
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -148,12 +154,12 @@ suspend fun saveMediaToGallery(url: String, isVideo: Boolean, title: String? = n
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun GalleryM3Carousel(images: List<GalleryImage>, modifier: Modifier = Modifier, title: String? = null, height: Dp = 300.dp, cover: String? = null, standIn: String? = null) {
+fun GalleryM3Carousel(images: List<GalleryImage>, modifier: Modifier = Modifier, title: String? = null, height: Dp = 300.dp, cover: String? = null, standIn: String? = null, revealKey: String? = null) {
     if (images.isEmpty()) return
     // A spoiler / NSFW gallery (#165): each image has its own cover, so you can still
     // swipe through them; revealing one reveals them all.
-    var revealed by remember { mutableStateOf(false) }
-    val covered = cover != null && !revealed
+    var shown by remember { mutableStateOf(false) }
+    val covered = cover != null && !shown && (revealKey == null || revealKey !in RevealedMedia.ids)
     val nav = LocalNavigator.current
     val cs = MaterialTheme.colorScheme
     val decodeWidth = feedDecodeWidth()
@@ -171,7 +177,7 @@ fun GalleryM3Carousel(images: List<GalleryImage>, modifier: Modifier = Modifier,
             Box(
                 Modifier
                     .fillMaxSize()
-                    .maskClip(RoundedCornerShape(28.dp))
+                    .maskClip(RoundedCornerShape(corner(28.dp)))
                     .background(cs.surfaceContainerHighest)
                     .clickable { nav.openGallery(images, title, i) },
                 contentAlignment = Alignment.Center,
@@ -193,7 +199,7 @@ fun GalleryM3Carousel(images: List<GalleryImage>, modifier: Modifier = Modifier,
                         // Gone below three quarters of the full width.
                         alpha = if (info.maxSize <= 0f) 1f else ((info.size / info.maxSize - 0.75f) * 4f).coerceIn(0f, 1f)
                     },
-                ) { revealed = true }
+                ) { shown = true; revealKey?.let { RevealedMedia.ids.add(it) } }
             }
         }
     }
@@ -206,12 +212,12 @@ fun GalleryM3Carousel(images: List<GalleryImage>, modifier: Modifier = Modifier,
  * the first image's aspect ratio.
  */
 @Composable
-fun GalleryCarousel(images: List<GalleryImage>, modifier: Modifier = Modifier, title: String? = null, height: Dp? = null, shape: Shape = RoundedCornerShape(16.dp), cover: String? = null, standIn: String? = null) {
+fun GalleryCarousel(images: List<GalleryImage>, modifier: Modifier = Modifier, title: String? = null, height: Dp? = null, shape: Shape = RoundedCornerShape(corner(16.dp)), cover: String? = null, standIn: String? = null, revealKey: String? = null) {
     if (images.isEmpty()) return
     // A spoiler / NSFW gallery (#165): each image has its own cover, so you can still
     // swipe through them; revealing one reveals them all.
-    var revealed by remember { mutableStateOf(false) }
-    val covered = cover != null && !revealed
+    var shown by remember { mutableStateOf(false) }
+    val covered = cover != null && !shown && (revealKey == null || revealKey !in RevealedMedia.ids)
     val nav = LocalNavigator.current
     val cs = MaterialTheme.colorScheme
     val first = images.first()
@@ -240,7 +246,7 @@ fun GalleryCarousel(images: List<GalleryImage>, modifier: Modifier = Modifier, t
                     onError = { failed = true },
                 )
                 if (failed) Icon(Icons.Outlined.BrokenImage, null, tint = cs.onSurfaceVariant)
-                if (covered) MediaCover(cover!!) { revealed = true }
+                if (covered) MediaCover(cover!!) { shown = true; revealKey?.let { RevealedMedia.ids.add(it) } }
             }
         }
         // Counter badge
@@ -297,11 +303,13 @@ fun NsfwBlur(
     label: String = "NSFW",
     // The media's own shape, so the cover's corners match it (#165).
     shape: Shape = RoundedCornerShape(16.dp),
+    // The post's id: revealing it in the feed keeps it revealed on its post page
+    // (and the other way) for the rest of the session.
+    revealKey: String? = null,
     content: @Composable () -> Unit,
 ) {
-    // Plain remember (not saveable): like Flutter, an item scrolled away and
-    // back is blurred again.
-    var revealed by remember { mutableStateOf(false) }
+    var shown by remember { mutableStateOf(false) }
+    val revealed = shown || (revealKey != null && revealKey in RevealedMedia.ids)
     if (!blur || revealed) {
         Box(modifier) { content() }
         return
@@ -322,7 +330,7 @@ fun NsfwBlur(
                     error = { Box(Modifier.fillMaxSize().background(Color.Black)) },
                 )
             }
-            MediaCover(label) { revealed = true }
+            MediaCover(label) { shown = true; revealKey?.let { RevealedMedia.ids.add(it) } }
         }
     }
 }
@@ -368,15 +376,21 @@ fun MediaViewerHost(stack: ViewerStack) {
     LaunchedEffect(covered) { app.media.inlinePlayer.setCovered(covered) }
     for (entry in stack.entries) {
         key(entry.id) {
+            // A picture opened from its circle grows out of it and back (#287) instead of fading.
+            val grows = (entry.viewer as? MediaViewer.Image)?.from?.isNotEmpty() == true
             AnimatedVisibility(
                 visibleState = entry.visibility,
-                enter = fadeIn(tween(220)),
-                exit = fadeOut(tween(180)),
+                enter = if (grows) EnterTransition.None else fadeIn(tween(220)),
+                exit = if (grows) ExitTransition.None else fadeOut(tween(180)),
             ) {
+                val growth = if (grows) transition.animateFloat(
+                    transitionSpec = { tween(if (targetState == EnterExitState.Visible) 320 else 260, easing = FastOutSlowInEasing) },
+                    label = "grow",
+                ) { if (it == EnterExitState.Visible) 1f else 0f } else null
                 // Swallows touches the viewer doesn't use, so they never reach the screen beneath.
                 Box(Modifier.fillMaxSize().pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } }) {
                     when (val v = entry.viewer) {
-                        is MediaViewer.Image -> ImageViewer(v.url, v.title)
+                        is MediaViewer.Image -> ImageViewer(v, progress = { growth?.value ?: 1f })
                         is MediaViewer.Gallery -> GalleryViewer(v)
                         is MediaViewer.Video -> VideoViewer(v)
                         is MediaViewer.Feed -> FeedMediaBrowser(v)
@@ -388,4 +402,9 @@ fun MediaViewerHost(stack: ViewerStack) {
             }
         }
     }
+}
+
+/** Spoiler / NSFW posts revealed this session, by post id: one reveal covers the feed card and the post page. */
+object RevealedMedia {
+    val ids = androidx.compose.runtime.mutableStateSetOf<String>()
 }

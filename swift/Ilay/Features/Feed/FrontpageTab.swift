@@ -6,8 +6,13 @@ import SwiftUI
 struct FrontpageTab: View {
     @State private var fab = FabScroll()
     @State private var chips = FeedChipsState()
+    /// Home's namespace: the Search screen grows out of this tab's search button (#271).
+    @Environment(\.searchZoom) private var homeZoom
+    /// Outside Home (previews): one of its own, matching nothing.
+    @Namespace private var ownZoom
 
     var body: some View {
+        let zoom = homeZoom ?? ownZoom
         let settings = app.settings.value
         // Settings → "Posts tab shows r/all": plain r/all here, and Explore's All button opens the frontpage.
         let postsAll = settings.postsTabAll
@@ -44,11 +49,16 @@ struct FrontpageTab: View {
             .navigationTitle(expandable ? title : "")
             .navigationSubtitle(expandable ? subtitle : "")
             .navigationBarTitleDisplayMode(expandable ? .large : .inline)
+            // What the Search screen grows out of (#271): its button in the bar.
+            .barZoomSource(searchZoomSource, in: zoom, label: expandable ? "Search" : "Search Reddit")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { SideBarButton() }
                 if expandable {
-                    ToolbarItemGroup(placement: .topBarTrailing) {
-                        Button("Search", systemImage: "magnifyingglass") { nav.push(.search()) }
+                    // Search on its own item, so it can be what the Search screen grows out of (#271).
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Search", systemImage: "magnifyingglass") { nav.push(.search(), zoom: true) }
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
                         Menu("Toolbar", systemImage: "ellipsis") { ToolbarPanel(compact: false) }
                             // Layout and autoplay apply at once and leave the menu open,
                             // so the change is visible behind it.
@@ -59,7 +69,7 @@ struct FrontpageTab: View {
                         if settings.showApiUsage {
                             ApiUsagePill()
                         } else {
-                            Button { nav.push(.search()) } label: {
+                            Button { nav.push(.search(), zoom: true) } label: {
                                 if settings.fullBarNewPost {
                                     Label("Search Reddit", systemImage: "magnifyingglass")
                                         .labelStyle(.titleAndIcon)

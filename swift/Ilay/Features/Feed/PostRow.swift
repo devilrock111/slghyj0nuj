@@ -10,6 +10,10 @@ struct FeedRowConfig: Equatable {
     var feedGalleryCarousel: Bool
     var subredditIcons: Bool
     var postAvatars = false
+    /// Settings › "r/ and u/ before names" (#97, #289).
+    var namePrefix = true
+    /// Settings › Corner roundness (#283), as a factor: see `corner(_:)`.
+    var cornerScale: CGFloat = 1
     var trackHistory: Bool
     var dimReadTextOnly: Bool
     var dimRead: Bool
@@ -25,10 +29,18 @@ struct FeedRowConfig: Equatable {
 
     /// Default and Mini are plain rows with hairlines; the others are cards on a grouped page.
     var isCarded: Bool { display != .large && display != .mini }
-    /// The page margin around a card.
-    var cardInset: CGFloat { isCarded ? 12 : 0 }
+    /// A feed post's corner `r` (its card and media) at the chosen roundness (#283).
+    func corner(_ r: CGFloat) -> CGFloat { scaleCorner(r, cornerScale) }
+    /// The page margin around a card. Compact's flat rows run edge to edge (#284).
+    var cardInset: CGFloat {
+        switch display {
+        case .compact: 0
+        case .compactCards: 10
+        default: isCarded ? 12 : 0
+        }
+    }
     /// A card's content margin (a plain row's, from the screen edge).
-    var contentInset: CGFloat { display.isCalm ? 11 : isCarded ? 14 : 16 }
+    var contentInset: CGFloat { display.isCalm ? 11 : display == .compact ? 16 : isCarded ? 14 : 16 }
 
     /// How wide media is: Calm cards' runs from one edge of the card to the other.
     var mediaWidth: CGFloat {
@@ -47,6 +59,8 @@ struct FeedRowConfig: Equatable {
             feedGalleryCarousel: s.feedGalleryCarousel,
             subredditIcons: s.subredditIcons,
             postAvatars: s.postAvatars,
+            namePrefix: s.subredditPrefix,
+            cornerScale: s.cornerRoundness.factor,
             trackHistory: s.trackHistory,
             dimReadTextOnly: s.dimReadTextOnly,
             dimRead: s.dimRead,
@@ -60,6 +74,25 @@ struct FeedRowConfig: Equatable {
         )
     }
 }
+
+/// A subreddit's name as it shows on screen (#97, as the Kotlin app's): "r/pics", or just
+/// "pics" with Settings › "r/ and u/ before names" off. Takes the bare name or the prefixed
+/// one; a user's profile ("u/name", or its "u_name" subreddit) shows as the user. Display only.
+func subredditName(_ name: String, prefix: Bool) -> String {
+    let bare = name.hasPrefix("r/") ? String(name.dropFirst(2)) : name
+    if bare.hasPrefix("u_") || bare.hasPrefix("u/") { return userName(String(bare.dropFirst(2)), prefix: prefix) }
+    return prefix ? "r/\(bare)" : bare
+}
+
+/// A user's name as it shows on posts, comments and profiles: "u/name", or just "name" with the same setting off (#289).
+func userName(_ name: String, prefix: Bool) -> String {
+    let bare = name.hasPrefix("u/") ? String(name.dropFirst(2)) : name
+    return prefix ? "u/\(bare)" : bare
+}
+
+/// The same, with the setting as it is now; a view reading it redraws when it changes.
+@MainActor func subredditName(_ name: String) -> String { subredditName(name, prefix: app.settings.value.subredditPrefix) }
+@MainActor func userName(_ name: String) -> String { userName(name, prefix: app.settings.value.subredditPrefix) }
 
 /// Feed preview URL, mid-resolution when the data-saver setting is on.
 func cardImage(_ p: Post, midRes: Bool) -> String? {
@@ -171,8 +204,8 @@ struct PostRow: Identifiable, Equatable {
     @MainActor init(_ p: Post, config c: FeedRowConfig) {
         post = p
         config = c
-        subredditLabel = p.subredditPrefixed.isEmpty ? "r/\(p.subreddit)" : p.subredditPrefixed
-        authorLabel = "u/\(p.author)"
+        subredditLabel = subredditName(p.subredditPrefixed.isEmpty ? p.subreddit : p.subredditPrefixed, prefix: c.namePrefix)
+        authorLabel = userName(p.author, prefix: c.namePrefix)
         timeLabel = timeAgo(p.createdUtc)
         snippet = p.snippet
         snippetText = snippetMarkdown(p.snippet)
@@ -207,7 +240,7 @@ struct PostRow: Identifiable, Equatable {
         }
         canShareMedia = canShareAsMedia(p)
         externalVideoLabel = p.type == .video && isExternalVideo(p) ? externalVideoSource(p) : nil
-        inAppLinkLabel = p.type == .link ? redditLinkLabel(p) : nil
+        inAppLinkLabel = p.type == .link ? redditLinkLabel(p, prefix: c.namePrefix) : nil
 
         var ahead: [Prefetch] = []
         // Mini cards only show small thumbnails; not worth warming.
@@ -247,6 +280,11 @@ struct PostRow: Identifiable, Equatable {
         }
         if p.type == .selfPost { return .none }
         let img = feedImageUrl(p, midRes: c.midResThumbnails)
+        // Compact: a link's small thumbnail beside its title, not a link box (#284).
+        if c.display == .compact, p.type == .link {
+            let raw = cardImage(p, midRes: c.midResThumbnails) ?? p.thumbnailUrl
+            return .thumbnail(url: blur ? nil : raw.flatMap(URL.init(string:)), pixels: Int(64 * c.scale * 2), symbol: blur ? "eye.slash" : "link", play: false)
+        }
         if p.type == .link {
             if c.display.isCalm {
                 let hero = (cardImage(p, midRes: c.midResThumbnails) ?? p.thumbnailUrl).flatMap(URL.init(string:))

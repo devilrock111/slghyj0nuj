@@ -32,13 +32,31 @@ import SwiftUI
     /// which also refreshes when already at the top.)
     var tabReselect = [0, 0, 0, 0, 0]
 
+    /// The Search screen being pushed grows out of the search button it was opened
+    /// from (#271): read once by that screen's `SearchZoom`, as it's built.
+    @ObservationIgnored var zoomsNextSearch = false
+    /// Which button it grows out of: each screen's own id, so a page over Posts (a
+    /// community's, #285) never zooms out of the Posts tab's button under it.
+    @ObservationIgnored var nextSearchSource = searchZoomSource
+    /// Each search button's place on screen, by its zoom id (`barZoomSource`), and the one
+    /// the Search screen being pushed grows out of: its field starts there (#285).
+    @ObservationIgnored var searchButtonFrames: [String: CGRect] = [:]
+    @ObservationIgnored var nextSearchFrame: CGRect?
+
     private init() {}
 
     /// Opens a screen on the current stack; an open media viewer would hide it, so it's closed first.
-    func push(_ route: Route) {
+    /// `zoom`: Search, from a button marked as its zoom source with `zoomSource` (the Posts tab's by default).
+    func push(_ route: Route, zoom: Bool = false, zoomSource: String = searchZoomSource) {
         viewers.clear()
+        if case .search = route {
+            zoomsNextSearch = zoom && showingHome
+            nextSearchSource = zoomSource
+            nextSearchFrame = searchButtonFrames[zoomSource]
+        }
         // Search instead fades in over the page (#77): the stack's own push only slides.
-        if case .search = route, showingHome, let window = topViewController()?.view.window {
+        // From its marked button it's the stack's own push, as a zoom out of the button (#271).
+        if case .search = route, !zoom, showingHome, let window = topViewController()?.view.window {
             let fade = CATransition()
             fade.type = .fade
             fade.duration = 0.2
@@ -89,6 +107,14 @@ import SwiftUI
     func openUser(_ username: String) { push(.user(username: username)) }
 
     func openImage(_ url: String, title: String? = nil) { viewers.open(.image(url: url, title: title)) }
+
+    /// A community's or user's picture, full screen with its name over it (#279). The
+    /// styles.redditmedia.com copy without its query is the original upload, not the
+    /// 256 px crop the header shows.
+    func openPicture(_ url: String, name: String) {
+        let full = URL(string: url)?.host == "styles.redditmedia.com" ? url.substringBefore("?") : url
+        viewers.open(.image(url: full, title: name, thumb: url))
+    }
 
     func openGallery(_ images: [GalleryImage], title: String? = nil, initialIndex: Int = 0) {
         if images.isEmpty { return }
