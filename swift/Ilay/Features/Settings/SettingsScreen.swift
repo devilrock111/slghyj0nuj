@@ -59,6 +59,9 @@ let settingsCategories: [[(title: String, subtitle: String, icon: String, color:
         ("Feed", "Posts tab feed, For You, sort", "newspaper.fill", .blue),
         ("Read & hidden", "Read posts, history, filters, NSFW", "eye.slash.fill", .mint),
         ("Digest", "The day's notable posts from your communities", "list.star", .cyan),
+    ],
+    // What things look like and how you get around, apart from what you read (#276).
+    [
         ("Appearance", "Theme, text sizes, post layout", "paintpalette.fill", .indigo),
         ("Navigation", "Tab bar or side bar, top bar", "sidebar.left", .yellow),
         ("Posts & comments", "Comments, swipes, thread buttons, links", "bubble.left.and.bubble.right.fill", .green),
@@ -100,7 +103,7 @@ private let settingsMoves: [String: (section: String, group: Int)] = [
     "Open reddit links in Ilay": ("Posts & comments", 1), "Safari extension: ask which app": ("Posts & comments", 1),
     "Thread buttons position": ("Posts & comments", 2), "Next comment button": ("Posts & comments", 2),
     "Hide thread buttons while scrolling": ("Posts & comments", 2), "OP's comments button": ("Posts & comments", 2),
-    "Your comments button": ("Posts & comments", 2),
+    "Your comments button": ("Posts & comments", 2), "Reopen threads where you left off": ("Posts & comments", 2),
     // Account: API usage, then clearing everything last.
     "Show API usage instead of search": ("Account", 1), "API usage": ("Account", 1), "Clear all data": ("Account", 2),
 ]
@@ -169,6 +172,7 @@ struct SettingsCatalog {
                  options: [PickOption(value: 0, label: "Layout's default"), PickOption(value: 5, label: "5 lines"), PickOption(value: 10, label: "10 lines")],
                  set: ctrl.setPostTextLines)
         b.toggle("Subreddit icons", "Show each community's icon on posts instead of its first letter", s.subredditIcons, set: ctrl.setSubredditIcons)
+        b.toggle("Poster's picture on posts", "A small profile picture on the community's icon. One more Reddit request per page of posts", s.postAvatars, set: ctrl.setPostAvatars)
         b.picker("Default sort", value: s.defaultSort, options: PostSort.allCases.map { PickOption(value: $0, label: $0.label) }, set: ctrl.setDefaultSort)
         b.toggle(
             "Posts tab shows r/all", "Instead of your frontpage, which Explore's All button opens then. For You, Blend and Reddit Home don't apply.",
@@ -449,6 +453,7 @@ struct SettingsCatalog {
         b.picker("Thread buttons position", value: s.threadFabPosition, options: ThreadFabPosition.allCases.map { PickOption(value: $0, label: $0.label) }, set: ctrl.setThreadFabPosition)
         b.toggle("Next comment button", "Jump to the next top-level comment in threads (long-press: the previous one)", s.threadJumpNext, set: ctrl.setThreadJumpNext)
         b.toggle("Hide thread buttons while scrolling", "They step aside while your finger scrolls a thread and come back when it stops", s.threadButtonsHideOnScroll, set: ctrl.setThreadButtonsHideOnScroll)
+        b.toggle("Reopen threads where you left off", "A thread you read before opens at the comment you were on, with Top to go back up", s.resumeThreads, set: ctrl.setResumeThreads)
         b.toggle("OP's comments button", "Jump between comments by the original poster in threads", s.threadJumpOp, set: ctrl.setThreadJumpOp)
         b.toggle("Your comments button", "Jump between your own comments in threads", s.threadJumpMine, set: ctrl.setThreadJumpMine)
         b.toggle("Tap a comment to collapse it", "Otherwise long-press. Comment text can't be selected while this is on", s.tapToCollapse, set: ctrl.setTapToCollapse)
@@ -503,7 +508,10 @@ struct SettingsCatalog {
 
     private func media(_ b: RowBuilder) {
         b.section("Media")
-        b.toggle("Autoplay videos", s.autoplaySound ? "Play videos as you scroll the feed" : "Play videos muted as you scroll the feed", s.autoplayMedia, set: ctrl.setAutoplayMedia)
+        // Off, on Wi-Fi only, or always: the old switch plus the network (Reddit feedback).
+        b.picker("Autoplay videos", s.autoplaySound ? "Play videos as you scroll the feed" : "Play videos muted as you scroll the feed",
+                 value: AutoplayMode(media: s.autoplayMedia, wifiOnly: s.autoplayWifiOnly),
+                 options: AutoplayMode.allCases.map { PickOption(value: $0, label: $0.label) }, set: ctrl.setAutoplayMode)
         if s.autoplayMedia {
             b.toggle("Autoplay with sound", "Feed videos start with sound; tap the speaker to mute one", s.autoplaySound, set: ctrl.setAutoplaySound)
         }
@@ -1204,6 +1212,8 @@ struct SettingsScreen: View {
         }
         .listStyle(.insetGrouped)
         .navigationTitle(section ?? "Settings")
+        // Settings itself gets the big title with Expandable, as Saved and History (#268).
+        .navigationBarTitleDisplayMode(section == nil && app.settings.value.topBarMode == .expandable ? .large : .automatic)
         // Secure-storage state, re-read after edits and account changes.
         .task(id: "\(prompts.refresh)|\(app.session.session?.identity ?? "")") {
             let store = app.secureStore
@@ -1315,7 +1325,11 @@ private func dayLabel(_ days: Int) -> String { days == 1 ? "1 day" : "\(days) da
         nav.showSnackbar("You're on the latest version (\(RedditConstants.appVersion)).")
         return
     }
-    let download = await confirmDialog("Update available — v\(info.version)", "A newer version is available on GitHub.", "Download", cancel: "Later")
+    // The release's notes as plain text: an alert can't show markdown (#266).
+    let notes = info.notes.map { n in
+        (try? AttributedString(markdown: n, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))).map { String($0.characters) } ?? n
+    }
+    let download = await confirmDialog("Update available — v\(info.version)", "A newer version is available on GitHub." + (notes.map { "\n\n" + $0 } ?? ""), "Download", cancel: "Later")
     // The release page: its .apk assets are Android's.
     if download { nav.openInBrowser(info.url) }
 }

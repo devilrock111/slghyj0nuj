@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -32,6 +33,7 @@ import androidx.compose.ui.unit.sp
 import com.bennybar.luli_for_reddit.BuildConfig
 import com.bennybar.luli_for_reddit.app
 import com.bennybar.luli_for_reddit.feature.feed.BloomTopBar
+import com.bennybar.luli_for_reddit.feature.markdown.RedditMarkdown
 import com.bennybar.luli_for_reddit.nav.Route
 import com.bennybar.luli_for_reddit.ui.Overlays
 
@@ -44,6 +46,32 @@ class Release(val version: String, val date: String, val highlights: List<String
  * with every release.
  */
 val CHANGELOG = listOf(
+    Release(
+        "2.0.115", "Nov 25, 2026",
+        listOf(
+            "Home feed: posts appear at their final size, the photo stays put instead of loading twice, and galleries fill in without resizing",
+            "Home feed: the flair fades in when it arrives",
+        ),
+    ),
+    Release(
+        "2.0.114", "Nov 25, 2026",
+        listOf(
+            "Subreddit header: a bigger icon and name, the banner folds with the name, blurred button circles, and status bar icons that follow the banner's lightness (#268)",
+            "Settings: the big header when opened from the side bar, and the list split into two groups (#268, #276)",
+            "Videos: autoplay Off / On Wi-Fi only / Always, and pinch to zoom in the full-screen viewer",
+            "Posts: the poster's picture on post cards, in Appearance (off by default) (#270)",
+            "Comments: collapsing and expanding animate (#273); a setting to not reopen threads where you left off (#269)",
+            "User pages: the actions in a ⋯ menu (#275); searching a profile shows a \"From u/…\" tag (#271)",
+            "Fixes: popups spring back when not swiped away (#269), the ☰ looks like Material's (#258), AI shows busy errors instead of spinning (#267), Notification activity shows your check interval",
+        ),
+    ),
+    Release(
+        "2.0.113", "Nov 25, 2026",
+        listOf(
+            "GIFs: GIF posts Reddit labels as images now play, as Reddit's small mp4 copy (#265)",
+            "Updates: the update notice shows what's new in the release it offers (#266)",
+        ),
+    ),
     Release(
         "2.0.112", "Nov 25, 2026",
         listOf(
@@ -799,6 +827,20 @@ internal fun newer(a: String, b: String): Boolean {
         if (d != 0) return d > 0
     }
     return false
+}
+
+/** The update notice's text: [message], then the new release's notes, scrolling when long (#266). */
+@Composable
+fun UpdateNoticeText(message: String, notes: String?) {
+    Column {
+        Text(message)
+        if (notes != null) {
+            Spacer(Modifier.height(12.dp))
+            Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
+                RedditMarkdown(notes, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
 }
 
 /**

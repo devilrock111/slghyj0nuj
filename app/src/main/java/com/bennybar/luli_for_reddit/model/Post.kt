@@ -34,6 +34,8 @@ data class Post(
     /** The subreddit's icon (from `sr_detail`), or null: the card shows its first letter. */
     val subredditIcon: String? = null,
     val author: String,
+    /** The author's account id (t2_…), for their picture on cards (#270); empty when unknown. */
+    val authorFullname: String = "",
     val score: Int,
     val numComments: Int,
     /** Null when the source doesn't say (a card read from the Home page; GraphQL without the field). */
@@ -152,6 +154,7 @@ data class Post(
                 subredditIcon = (d["sr_detail"]["community_icon"].str()?.ifEmpty { null } ?: d["sr_detail"]["icon_img"].str()?.ifEmpty { null })
                     ?.replace("&amp;", "&"),
                 author = d["author"].str() ?: "[deleted]",
+                authorFullname = d["author_fullname"].str() ?: "",
                 authorFlair = flairOf(d, "author"),
                 score = d["score"].int() ?: 0,
                 numComments = d["num_comments"].int() ?: 0,
@@ -192,7 +195,8 @@ data class Post(
                 hlsUrl = redditVideo?.get("hls_url").str()
                     ?: if (bareVreddit) "https://v.redd.it/${vreddit!!.pathSegments.first()}/HLSPlaylist.m3u8" else null,
                 fallbackVideoUrl = redditVideo?.get("fallback_url").str(),
-                gifMp4Url = content["preview"]["reddit_video_preview"]["fallback_url"].str(),
+                gifMp4Url = content["preview"]["reddit_video_preview"]["fallback_url"].str()
+                    ?: content["preview"]["images"][0]["variants"]["mp4"]["source"]["url"].str(),
                 gallery = gallery,
                 likes = d["likes"].bool(),
             )
@@ -202,16 +206,17 @@ data class Post(
             if (d["is_self"].isTrue()) return PostType.SELF
             if (hasGallery) return PostType.GALLERY
             if (isVideo) return PostType.VIDEO
-            when (d["post_hint"].str()) {
-                "image" -> return PostType.IMAGE
-                "rich:video", "hosted:video" -> return PostType.VIDEO
-            }
             val rawUrl = d["url"].str() ?: ""
             val parsed = runCatching { Uri.parse(rawUrl) }.getOrNull()
             // Check the path without query params — preview.redd.it links end
             // with `.png?width=…&s=…`.
             val path = (parsed?.path ?: rawUrl).lowercase()
+            // Before post_hint: Reddit hints an i.redd.it GIF as "image" (#265).
             if (path.endsWith(".gif")) return PostType.GIF
+            when (d["post_hint"].str()) {
+                "image" -> return PostType.IMAGE
+                "rich:video", "hosted:video" -> return PostType.VIDEO
+            }
             if (path.endsWith(".jpg") || path.endsWith(".jpeg") || path.endsWith(".png") || path.endsWith(".webp")) {
                 return PostType.IMAGE
             }

@@ -3,6 +3,7 @@ package com.bennybar.luli_for_reddit.feature.settings
 import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.MailOutline
 import androidx.compose.material.icons.automirrored.rounded.Notes
+import com.bennybar.luli_for_reddit.feature.about.UpdateNoticeText
 import com.bennybar.luli_for_reddit.feature.inbox.InboxNotifications
 import androidx.compose.material.icons.outlined.DynamicFeed
 import androidx.compose.material.icons.outlined.Palette
@@ -68,6 +69,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
+import com.bennybar.luli_for_reddit.feature.feed.BloomTopBar
+import com.bennybar.luli_for_reddit.feature.feed.collapsingHeader
+import com.bennybar.luli_for_reddit.feature.feed.rememberPageHeader
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -227,6 +233,8 @@ import com.bennybar.luli_for_reddit.settings.TopBarMode
 import com.bennybar.luli_for_reddit.settings.TopBarMenuItem
 import com.bennybar.luli_for_reddit.settings.ReadDim
 import com.bennybar.luli_for_reddit.settings.readDim
+import com.bennybar.luli_for_reddit.settings.AutoplayMode
+import com.bennybar.luli_for_reddit.settings.autoplayMode
 import com.bennybar.luli_for_reddit.settings.topBarMenu
 import com.bennybar.luli_for_reddit.ui.switchThumb
 import com.bennybar.luli_for_reddit.ui.Overlays
@@ -280,6 +288,9 @@ private val SETTINGS_CATEGORIES = listOf(
         Triple("Feed", "Posts tab feed, For You, sort", Icons.Outlined.DynamicFeed),
         Triple("Read & hidden", "Read posts, history, filters, NSFW", Icons.Outlined.VisibilityOff),
         Triple("Digest", "The day's notable posts from your communities", Icons.Outlined.Newspaper),
+    ),
+    // What things look like and how you get around, apart from what you read (#276).
+    listOf(
         Triple("Appearance", "Theme, font, text sizes, post layout", Icons.Outlined.Palette),
         Triple("Navigation", "Bottom bar or side bar, top bar, Back", Icons.Outlined.Explore),
         Triple("Posts & comments", "Comments, swipes, thread buttons, links", Icons.Outlined.Forum),
@@ -302,19 +313,26 @@ private val SETTINGS_CATEGORIES = listOf(
 @Composable
 fun SettingsScreen(section: String? = null) {
     val nav = LocalNavigator.current
+    val listState = rememberLazyListState()
+    // Opened from the side bar, as a page of its own: the big header with Expandable,
+    // as Saved and History (#268). Pushed from elsewhere (←), the plain bar.
+    val sideBar = LocalSideBar.current != null
+    val header = rememberPageHeader(listState).takeIf { sideBar }
     Scaffold(
+        Modifier.collapsingHeader(header),
         topBar = {
-            TopAppBar(
+            if (header != null) BloomTopBar(section ?: "Settings", collapsing = header)
+            else TopAppBar(
                 title = { Text(section ?: "Settings") },
                 navigationIcon = {
                     // Opened from the side bar (#111): ☰ instead of ←.
-                    if (LocalSideBar.current != null) SideBarButton()
+                    if (sideBar) SideBarButton()
                     else IconButton(onClick = { nav.pop() }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") }
                 },
             )
         },
     ) { padding ->
-        SettingsList(contentPadding = padding, section = section)
+        SettingsList(contentPadding = padding, section = section, listState = listState)
     }
 }
 
@@ -332,6 +350,7 @@ fun SettingsList(
     embedded: Boolean = false,
     contentPadding: PaddingValues = PaddingValues(),
     section: String? = null,
+    listState: LazyListState = rememberLazyListState(),
 ) {
     val s by app.settings.state.collectAsStateWithLifecycle()
     val ctrl = app.settings
@@ -752,6 +771,10 @@ fun SettingsList(
             Icons.Rounded.Image, s.subredditIcons, ctrl::setSubredditIcons,
         )
         switch(
+            "Poster's picture on posts", "A small profile picture on the community's icon. One more Reddit request per page of posts",
+            Icons.Rounded.AccountCircle, s.postAvatars, ctrl::setPostAvatars,
+        )
+        switch(
             "Floating filter chips", "On Home, subreddits and custom feeds, show the chips under the top bar when you scroll back up",
             Icons.Rounded.FilterList, s.floatingChips, ctrl::setFloatingChips,
         )
@@ -953,6 +976,11 @@ fun SettingsList(
             Icons.Rounded.UnfoldLess, s.threadButtonsHideOnScroll, ctrl::setThreadButtonsHideOnScroll,
         )
         switch(
+            "Reopen threads where you left off",
+            "A thread you read before opens at the comment you were on, with Top to go back up",
+            Icons.Rounded.History, s.resumeThreads, ctrl::setResumeThreads,
+        )
+        switch(
             "Jump to OP's comments button",
             "Show a button in threads to jump between comments by the original poster",
             Icons.Rounded.RecordVoiceOver, s.threadJumpOp, ctrl::setThreadJumpOp,
@@ -966,9 +994,17 @@ fun SettingsList(
 
         // ---------------------------------------------------------------- Media
         section("Media")
-        switch(
-            "Autoplay videos", if (s.autoplaySound) "Play videos as you scroll the feed" else "Play videos muted as you scroll the feed",
-            Icons.Outlined.PlayCircleOutline, s.autoplayMedia, ctrl::setAutoplayMedia,
+        // Off, on Wi-Fi only, or always: the old switch plus the network (Reddit feedback).
+        val autoplay = autoplayMode(s.autoplayMedia, s.autoplayWifiOnly)
+        tile(
+            "Autoplay videos",
+            when (autoplay) {
+                AutoplayMode.OFF -> "Off"
+                AutoplayMode.WIFI -> "On Wi-Fi only: play videos${if (s.autoplaySound) "" else " muted"} as you scroll the feed"
+                AutoplayMode.ALWAYS -> if (s.autoplaySound) "Play videos as you scroll the feed" else "Play videos muted as you scroll the feed"
+            },
+            Icons.Outlined.PlayCircleOutline,
+            onClick = launch { pickOption(AutoplayMode.entries.map { PickOption(it, it.label) }, autoplay)?.let(ctrl::setAutoplayMode) },
         )
         if (s.autoplayMedia) {
             switch(
@@ -1404,7 +1440,7 @@ fun SettingsList(
             if (q.isNotEmpty() && shown.isEmpty()) noResults()
         }
     } else {
-        LazyColumn(modifier.fillMaxSize(), contentPadding = contentPadding) {
+        LazyColumn(modifier.fillMaxSize(), state = listState, contentPadding = contentPadding) {
             if (section == null) item(key = "search") { searchField() }
             items(shown.size, key = { shown[it].key }) { row(it) }
             if (q.isNotEmpty() && shown.isEmpty()) item(key = "none") { noResults() }
@@ -1662,7 +1698,7 @@ private suspend fun checkUpdatesNow() {
         AlertDialog(
             onDismissRequest = { done(false) },
             title = { Text("Update available — v${info.version}") },
-            text = { Text("A newer version is available on GitHub.") },
+            text = { UpdateNoticeText("A newer version is available on GitHub.", info.notes) },
             dismissButton = { TextButton(onClick = { done(false) }) { Text("Later") } },
             confirmButton = { Button(onClick = { done(true) }) { Text("Download") } },
         )

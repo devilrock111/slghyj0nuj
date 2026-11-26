@@ -1,6 +1,9 @@
 package com.bennybar.luli_for_reddit.feature.post
 
-import androidx.compose.animation.core.Animatable
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
@@ -545,7 +548,8 @@ fun PostDetailScreen(subreddit: String, postId: String, focusCommentId: String?)
  */
 @Composable
 private fun ThreadPosition(postId: String, listState: LazyListState, flat: List<Comment>, settled: Boolean, onResumed: () -> Unit) {
-    val resumeAt = remember(postId) { app.threadVisits.lastPosition(postId) }
+    // Settings › Reopen threads where you left off (#269): off, every thread opens at the top.
+    val resumeAt = remember(postId) { if (app.settings.value.resumeThreads) app.threadVisits.lastPosition(postId) else null }
     // Once a visit: not again on coming back from a profile or a link opened from here.
     var resumed by rememberSaveable(postId) { mutableStateOf(resumeAt == null) }
     LaunchedEffect(flat, settled) {
@@ -601,25 +605,31 @@ private fun BoxScope.BackWhereYouLeftOff(visible: Boolean, listState: LazyListSt
     }
 }
 
-/** A floating capsule follows a sideways swipe and, swiped far or fast enough, goes (#264). */
+/**
+ * A floating capsule follows a sideways swipe and, swiped far or fast enough, goes (#264).
+ * Drag deltas land on the state at once, so a swipe let go short of dismissing always
+ * springs back (#269: launched per-delta updates could land after the spring-back started
+ * and cancel it, leaving the capsule off to the side). The fade modulates alpha in place,
+ * not through an offscreen layer, which cut the shadow off to a rectangle (#269).
+ */
 @Composable
 private fun Modifier.swipeAway(onDismiss: () -> Unit): Modifier {
-    val x = remember { Animatable(0f) }
-    val scope = rememberCoroutineScope()
+    var x by remember { mutableFloatStateOf(0f) }
     val far = with(LocalDensity.current) { 96.dp.toPx() }
     return graphicsLayer {
-        translationX = x.value
-        alpha = 1f - (abs(x.value) / (far * 2)).coerceIn(0f, 1f)
+        translationX = x
+        alpha = 1f - (abs(x) / (far * 2)).coerceIn(0f, 1f)
+        compositingStrategy = CompositingStrategy.ModulateAlpha
     }.draggable(
-        rememberDraggableState { d -> scope.launch { x.snapTo(x.value + d) } },
+        rememberDraggableState { d -> x += d },
         Orientation.Horizontal,
         onDragStopped = { v ->
-            if (abs(x.value) > far || abs(v) > 1500f) {
-                val dir = if (x.value != 0f) sign(x.value) else sign(v)
-                x.animateTo(dir * far * 3)
+            if (abs(x) > far || abs(v) > 1500f) {
+                val dir = if (x != 0f) sign(x) else sign(v)
                 onDismiss()
+                animate(x, dir * far * 3, v) { value, _ -> x = value }
             } else {
-                x.animateTo(0f)
+                animate(x, 0f, v) { value, _ -> x = value }
             }
         },
     )
@@ -873,6 +883,7 @@ private fun CommentList(
                     val first = i == 0 || c.depth == 0
                     val last = i == flat.lastIndex || flat[i + 1].depth == 0
                     val rails = CalmRails(c.depth, prev = if (i == 0) 0 else flat[i - 1].depth, next = if (i == flat.lastIndex) 0 else flat[i + 1].depth)
+                    Box(Modifier.animateItem(commentFadeIn, commentMove, commentFadeOut)) {
                     CalmThreadRow(first, last, highlighted = currentMatchId == c.fullname) {
                         if (c.isMore) {
                             Box(Modifier.fillMaxWidth().calmRails(rails)) {
@@ -898,9 +909,11 @@ private fun CommentList(
                             }
                         }
                     }
+                    }
                 }
             } else {
                 items(flat, key = { it.fullname }, contentType = { if (it.isMore) "more" else "comment" }) { c ->
+                    Box(Modifier.animateItem(commentFadeIn, commentMove, commentFadeOut)) {
                     if (c.isMore) {
                         MoreRow(c, loading = c.fullname in thread.loadingMore, onClick = { actions.loadMore(c) })
                     } else {
@@ -918,11 +931,21 @@ private fun CommentList(
                             if (CommentTree.folded(c.id) in thread.collapsed && c.id !in thread.collapsed) FoldedReplies(c, actions)
                         }
                     }
+                    }
                 }
             }
         }
     }
 }
+
+// Collapsing / expanding a thread (#273): its replies fade out / in and the comments
+// below slide up / down, instead of the list jumping. animateItem only runs on changes.
+private val commentFadeIn = androidx.compose.animation.core.tween<Float>(220)
+private val commentFadeOut = androidx.compose.animation.core.tween<Float>(160)
+private val commentMove = androidx.compose.animation.core.spring(
+    stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow,
+    visibilityThreshold = androidx.compose.ui.unit.IntOffset.VisibilityThreshold,
+)
 
 /** Where volume presses go while a thread is on screen (Settings → Volume keys move between comments). */
 object VolumeKeys {

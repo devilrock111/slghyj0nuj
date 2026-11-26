@@ -29,6 +29,9 @@ struct PagePost: Equatable, Sendable {
     let href: String
     let domain: String
     let image: String?
+    /// The image's size, when the page gives it: Calm shapes the photo by it at once, not when the full post comes.
+    var imageWidth: Int? = nil
+    var imageHeight: Int? = nil
     let body: String
     let flair: String?
     let nsfw: Bool
@@ -77,6 +80,8 @@ struct PagePost: Equatable, Sendable {
             feedReason: reason,
             previewUrl: image,
             previewMedUrl: image,
+            previewWidth: imageWidth,
+            previewHeight: imageHeight,
             hlsUrl: vreddit.map { "https://v.redd.it/\($0)/HLSPlaylist.m3u8" }
         )
     }
@@ -107,6 +112,8 @@ struct PagePost: Equatable, Sendable {
             href: o["href"].str() ?? "",
             domain: o["domain"].str() ?? "",
             image: o["img"].str()?.nilIfEmpty,
+            imageWidth: o["imgW"].int().flatMap { $0 > 0 ? $0 : nil },
+            imageHeight: o["imgH"].int().flatMap { $0 > 0 ? $0 : nil },
             body: o["body"].str() ?? "",
             flair: o["flair"].str()?.nilIfEmpty,
             nsfw: o["nsfw"].isTrue(),
@@ -489,6 +496,8 @@ final class RedditHomeLoader: NSObject, WKNavigationDelegate {
             permalink: e.getAttribute('permalink') || '', href: e.getAttribute('content-href') || '',
             domain: e.getAttribute('domain') || '',
             img: img ? (img.getAttribute('src') || '') : '',
+            imgW: img ? (parseInt(img.getAttribute('width'), 10) || img.naturalWidth || 0) : 0,
+            imgH: img ? (parseInt(img.getAttribute('height'), 10) || img.naturalHeight || 0) : 0,
             body: body ? (body.innerText || '').trim().slice(0, 400) : '',
             flair: flair ? (flair.innerText || '').trim() : '',
             nsfw: e.hasAttribute('nsfw'), spoiler: e.hasAttribute('spoiler'),
@@ -717,9 +726,19 @@ final class RedditHomeEngine {
 
     /// `full`, each keeping the reason Reddit's page gave for it.
     private func withReasons(_ full: [Post], _ page: [PagePost]) -> [Post] {
-        var reasons: [String: String] = [:]
-        for p in page { reasons[p.id.removePrefix("t3_")] = p.reason }
-        return full.map { p in reasons[p.id].map { r in p.with { $0.feedReason = r } } ?? p }
+        var cards: [String: PagePost] = [:]
+        for p in page { cards[p.id.removePrefix("t3_")] = p }
+        return full.map { p in
+            guard let card = cards[p.id] else { return p }
+            // The card keeps the photo it already showed (the page's copy of the same
+            // picture): Reddit's own preview URL differs, so the card loaded it again. A
+            // gallery shows it under its first image until that loads.
+            let keep = card.image
+            return p.with {
+                if let r = card.reason { $0.feedReason = r }
+                if let keep { $0.previewMedUrl = keep }
+            }
+        }
     }
 
     /// Anonymous: whether a Home load worked, how many posts and how long (coarse ranges).

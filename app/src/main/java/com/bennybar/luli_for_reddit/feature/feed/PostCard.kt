@@ -1,5 +1,8 @@
 package com.bennybar.luli_for_reddit.feature.feed
 
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.offset
+import androidx.compose.runtime.LaunchedEffect
 import com.bennybar.luli_for_reddit.ui.theme.ScaledText
 import com.bennybar.luli_for_reddit.ui.theme.TextKind
 import androidx.compose.material.icons.outlined.VisibilityOff
@@ -83,6 +86,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.interaction.InteractionSource
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -135,9 +141,11 @@ import com.bennybar.luli_for_reddit.feature.media.GalleryCarousel
 import com.bennybar.luli_for_reddit.feature.media.InlineVideo
 import com.bennybar.luli_for_reddit.feature.media.NsfwBlur
 import com.bennybar.luli_for_reddit.feature.media.postVideoUrl
+import com.bennybar.luli_for_reddit.feature.media.autoplayNow
 import com.bennybar.luli_for_reddit.feature.post.hidePost
 import com.bennybar.luli_for_reddit.feature.post.showPostActionsSheet
 import com.bennybar.luli_for_reddit.feature.post.showReplySheet
+import com.bennybar.luli_for_reddit.model.GalleryImage
 import com.bennybar.luli_for_reddit.model.Post
 import com.bennybar.luli_for_reddit.model.PostType
 import com.bennybar.luli_for_reddit.nav.AppNavigator
@@ -492,7 +500,7 @@ private fun LargeCard(p: Post, a: PostActions, s: Settings, dim: Modifier, glow:
                 Modifier.readDim(),
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, lineHeight = TitleLineHeight),
             ) }
-            p.linkFlair?.let {
+            ArrivingFlair(p) {
                 Spacer(Modifier.height(8.dp))
                 Flair(it)
             }
@@ -533,7 +541,7 @@ private fun CardsCard(p: Post, a: PostActions, s: Settings, dim: Modifier, glow:
                 Modifier.readDim(),
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, lineHeight = TitleLineHeight),
             ) }
-            p.linkFlair?.let {
+            ArrivingFlair(p) {
                 Spacer(Modifier.height(8.dp))
                 Flair(it)
             }
@@ -574,7 +582,7 @@ private fun MiniCard(p: Post, a: PostActions, s: Settings, dim: Modifier, glow: 
                         overflow = TextOverflow.Ellipsis,
                         style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold, lineHeight = TitleLineHeight),
                     ) }
-                    p.linkFlair?.let {
+                    ArrivingFlair(p) {
                         Spacer(Modifier.height(6.dp))
                         Flair(it)
                     }
@@ -617,13 +625,13 @@ private fun BannerMedia(p: Post, a: PostActions, s: Settings, height: Dp) {
         return
     }
     val blur = blurOf(p, s)
-    if (p.type == PostType.GALLERY && p.gallery.isNotEmpty()) {
+    if (isFeedGallery(p)) {
         FeedGallery(p, s, Modifier.padding(bottom = 4.dp), height = height)
         return
     }
     val url = feedImageUrl(p, s)
     // Inline autoplay for videos (when enabled and not NSFW-blurred).
-    if (p.type == PostType.VIDEO && !blur && s.autoplayMedia && !isExternalVideo(p)) {
+    if (p.type == PostType.VIDEO && !blur && autoplayNow(s) && !isExternalVideo(p)) {
         val vurl = postVideoUrl(p)
         if (vurl.isNotEmpty() && !vurl.lowercase().endsWith(".gif")) {
             Box(Modifier.padding(bottom = 4.dp).clip(RoundedCornerShape(16.dp))) {
@@ -643,7 +651,7 @@ private fun BannerMedia(p: Post, a: PostActions, s: Settings, height: Dp) {
                 .background(cs.surfaceContainerHighest)
                 .clickable(onClick = a::openMedia),
         ) {
-            if (url != null) FeedImage(url, Modifier.fillMaxSize())
+            if (url != null) FeedImage(url, Modifier.fillMaxSize(), standIn = p.previewMedUrl)
             if (p.type == PostType.VIDEO || p.type == PostType.GIF) PlayBadge(Modifier.align(Alignment.Center))
             ExternalVideoPill(p, Modifier.align(Alignment.TopEnd).padding(8.dp))
             if (p.type == PostType.GIF) MediaPill("GIF", Icons.Rounded.Gif, Modifier.align(Alignment.TopEnd).padding(8.dp))
@@ -701,15 +709,18 @@ private fun Thumb(p: Post, a: PostActions, s: Settings, size: Dp) {
 private fun Header(p: Post, a: PostActions, s: Settings) {
     val cs = MaterialTheme.colorScheme
     Row(verticalAlignment = Alignment.CenterVertically) {
-        LetterAvatar(
-            p.subreddit,
-            imageUrl = p.subredditIcon.takeIf { s.subredditIcons },
-            size = 28.dp,
-            container = cs.secondaryContainer,
-            content = cs.onSecondaryContainer,
-            fontSize = 13.sp,
-            modifier = Modifier.clickable(onClick = a::openSubreddit),
-        )
+        Box {
+            LetterAvatar(
+                p.subreddit,
+                imageUrl = p.subredditIcon.takeIf { s.subredditIcons },
+                size = 28.dp,
+                container = cs.secondaryContainer,
+                content = cs.onSecondaryContainer,
+                fontSize = 13.sp,
+                modifier = Modifier.clickable(onClick = a::openSubreddit),
+            )
+            if (s.postAvatars) PosterBadge(p, 13.dp, cs.surfaceContainerLow, Modifier.align(Alignment.BottomEnd).offset(3.dp, 3.dp))
+        }
         Spacer(Modifier.width(10.dp))
         // Tapping the "u/author" part of the header opens their profile; the
         // rest opens the subreddit.
@@ -793,12 +804,22 @@ internal fun rememberFlairText(flair: UserFlair): Pair<AnnotatedString, Map<Stri
 private fun FeedGallery(p: Post, s: Settings, modifier: Modifier = Modifier, height: Dp? = null, shape: Shape = RoundedCornerShape(16.dp)) {
     // A spoiler / NSFW gallery covers each image, not the whole carousel, so it still swipes (#165).
     val cover = if (blurOf(p, s)) blurLabel(p, s) else null
-    if (s.feedGalleryCarousel && p.gallery.size > 1) {
-        GalleryM3Carousel(p.gallery, modifier, title = p.title, height = (height ?: 300.dp).coerceIn(220.dp, 340.dp), cover = cover)
+    // A Reddit Home card has only the first picture so far; an unknown count takes the
+    // carousel, as the full post most likely will.
+    val images = p.gallery.ifEmpty { p.previewMedUrl?.let { listOf(GalleryImage(it, p.previewWidth, p.previewHeight)) }.orEmpty() }
+    if (s.feedGalleryCarousel && (p.gallery.size > 1 || p.gallery.isEmpty())) {
+        GalleryM3Carousel(images, modifier, title = p.title, height = (height ?: 300.dp).coerceIn(220.dp, 340.dp), cover = cover, standIn = p.previewMedUrl)
     } else {
-        GalleryCarousel(p.gallery, modifier, title = p.title, height = height, shape = shape, cover = cover)
+        GalleryCarousel(images, modifier, title = p.title, height = height, shape = shape, cover = cover, standIn = p.previewMedUrl)
     }
 }
+
+/**
+ * Shown as a gallery: one with images, or a Reddit Home card that knows only its first
+ * picture so far. That one takes the gallery's layout at once, so the full post just
+ * fills in the rest (it was a photo, then resized to the carousel).
+ */
+private fun isFeedGallery(p: Post) = p.type == PostType.GALLERY && (p.gallery.isNotEmpty() || p.previewMedUrl != null)
 
 /** "Reminder tomorrow at 09:00" on a post you asked to be reminded about (cards and the post screen); tap to change or cancel. */
 @Composable
@@ -900,7 +921,7 @@ fun PollOptions(p: Post) {
 private fun Media(p: Post, a: PostActions, s: Settings) {
     val blur = blurOf(p, s)
     when (p.type) {
-        PostType.GALLERY -> if (p.gallery.isNotEmpty()) {
+        PostType.GALLERY -> if (isFeedGallery(p)) {
             FeedGallery(p, s, Modifier.padding(bottom = 4.dp))
         } else {
             NsfwBlur(blur, blurredImageUrl = p.blurredPreviewUrl, label = blurLabel(p, s)) { MediaPreview(p, a, s) }
@@ -923,7 +944,7 @@ private fun MediaPreview(p: Post, a: PostActions, s: Settings) {
     val aspect = if (w != null && h != null && h > 0) w.toFloat() / h else 16f / 9f
     // Inline autoplay for videos (when enabled and not NSFW-blurred), as in
     // the Cards and Calm layouts — Default only ever showed the poster.
-    if (p.type == PostType.VIDEO && !blurOf(p, s) && s.autoplayMedia && !isExternalVideo(p)) {
+    if (p.type == PostType.VIDEO && !blurOf(p, s) && autoplayNow(s) && !isExternalVideo(p)) {
         val vurl = postVideoUrl(p)
         if (vurl.isNotEmpty() && !vurl.lowercase().endsWith(".gif")) {
             BoxWithConstraints(Modifier.padding(bottom = 4.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp))) {
@@ -943,7 +964,7 @@ private fun MediaPreview(p: Post, a: PostActions, s: Settings) {
             .background(cs.surfaceContainerHighest)
             .clickable(onClick = a::openMedia),
     ) {
-        if (url != null) FeedImage(url, Modifier.fillMaxSize(), brokenIcon = true)
+        if (url != null) FeedImage(url, Modifier.fillMaxSize(), brokenIcon = true, standIn = p.previewMedUrl)
         if (p.type == PostType.VIDEO) PlayBadge(Modifier.align(Alignment.Center))
         ExternalVideoPill(p, Modifier.align(Alignment.TopEnd).padding(8.dp))
         if (p.type == PostType.GALLERY) {
@@ -953,11 +974,24 @@ private fun MediaPreview(p: Post, a: PostActions, s: Settings) {
     }
 }
 
+/**
+ * The post's flair. A Reddit Home card gets it with the full post a moment later: it fades
+ * in then. One there from the start just shows (no animation, no effect per card).
+ */
+@Composable
+private fun ArrivingFlair(p: Post, content: @Composable (UserFlair) -> Unit) {
+    val flair = p.linkFlair
+    val startedWithout = remember { flair == null }
+    val alpha = remember { Animatable(if (startedWithout) 0f else 1f) }
+    if (startedWithout) LaunchedEffect(flair != null) { if (flair != null) alpha.animateTo(1f, tween(250)) }
+    if (flair != null) Column(Modifier.graphicsLayer { this.alpha = alpha.value }) { content(flair) }
+}
+
 /** A cover-cropped feed image decoded at screen width (the prefetcher uses the same request). */
 @Composable
-private fun FeedImage(url: String, modifier: Modifier, brokenIcon: Boolean = false) {
+private fun FeedImage(url: String, modifier: Modifier, brokenIcon: Boolean = false, standIn: String? = null) {
     val cs = MaterialTheme.colorScheme
-    val request = rememberSizedRequest(url, feedDecodeWidth())
+    val request = rememberSizedRequest(url, feedDecodeWidth(), standIn)
     if (brokenIcon) {
         // AsyncImage, not SubcomposeAsyncImage: subcomposition is slow in a scrolling list.
         var failed by remember(url) { mutableStateOf(false) }
@@ -1293,7 +1327,7 @@ private fun CalmBody(p: Post, a: PostActions, s: Settings, mediaShape: androidx.
         letterSpacing = (-0.1).sp,
         color = cs.onSurface,
     ) }
-    p.linkFlair?.let { CalmFlair(it, Modifier.padding(top = 8.dp)) }
+    ArrivingFlair(p) { CalmFlair(it, Modifier.padding(top = 8.dp)) }
     CrosspostLine(p)
     ReminderLine(p)
     if (mediaShape != null) CalmMedia(p, a, s, mediaShape)
@@ -1391,6 +1425,28 @@ private fun CalmButtonGroup(buttons: List<CalmButton>) {
     }
 }
 
+/**
+ * The poster's profile picture on the community's icon, by the username line (#270).
+ * Asked for in one request with the other cards on screen; nothing until it's in, or
+ * when they have none. A ring in the card's colour sets it off the icon.
+ */
+@Composable
+private fun PosterBadge(p: Post, size: androidx.compose.ui.unit.Dp, ring: Color, modifier: Modifier) {
+    LaunchedEffect(p.authorFullname) { app.authorAvatars.wantPoster(p) }
+    val icons by app.authorAvatars.icons.collectAsState()
+    val url = icons[p.author.lowercase()] ?: return
+    AsyncImage(
+        url,
+        null,
+        modifier
+            .size(size)
+            .border(1.5.dp, ring, CircleShape)
+            .padding(1.5.dp)
+            .clip(CircleShape),
+        contentScale = ContentScale.Crop,
+    )
+}
+
 @Composable
 private fun CalmHeader(p: Post, a: PostActions, s: Settings) {
     val cs = MaterialTheme.colorScheme
@@ -1404,14 +1460,20 @@ private fun CalmHeader(p: Post, a: PostActions, s: Settings) {
             1 -> cs.secondaryContainer to cs.onSecondaryContainer
             else -> cs.tertiaryContainer to cs.onTertiaryContainer
         }
-        LetterAvatar(
-            p.subreddit,
-            imageUrl = p.subredditIcon.takeIf { s.subredditIcons },
-            size = 36.dp,
-            container = bg,
-            content = fg,
-            modifier = Modifier.clickable(onClick = a::openSubreddit),
-        )
+        Box {
+            LetterAvatar(
+                p.subreddit,
+                imageUrl = p.subredditIcon.takeIf { s.subredditIcons },
+                size = 36.dp,
+                container = bg,
+                content = fg,
+                modifier = Modifier.clickable(onClick = a::openSubreddit),
+            )
+            if (s.postAvatars) {
+                val ring = if (LocalCalmOnCard.current) calmCardColor() else cs.surface
+                PosterBadge(p, 16.dp, ring, Modifier.align(Alignment.BottomEnd).offset(3.dp, 3.dp))
+            }
+        }
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
             Text(
@@ -1495,7 +1557,7 @@ private fun CalmMedia(p: Post, a: PostActions, s: Settings, shape: androidx.comp
             if (img != null) {
                 NsfwBlur(blur, blurredImageUrl = p.blurredPreviewUrl, label = blurLabel(p, s), shape = RectangleShape) {
                     Box(Modifier.fillMaxWidth().aspectRatio(2f).background(cs.surfaceContainerHighest)) {
-                        FeedImage(img, Modifier.fillMaxSize())
+                        FeedImage(img, Modifier.fillMaxSize(), standIn = p.previewMedUrl)
                     }
                 }
             }
@@ -1516,13 +1578,13 @@ private fun CalmMedia(p: Post, a: PostActions, s: Settings, shape: androidx.comp
         val h = p.previewHeight ?: first?.height
         val aspect = if (w != null && h != null && h > 0) (w.toFloat() / h).coerceIn(0.5f, 2f) else 16f / 10f
         val height = maxWidth / aspect
-        if (p.type == PostType.GALLERY && p.gallery.isNotEmpty()) {
+        if (isFeedGallery(p)) {
             FeedGallery(p, s, height = height, shape = shape)
             return@BoxWithConstraints
         }
         val url = feedImageUrl(p, s)
         // Inline autoplay for videos (when enabled and not NSFW-blurred).
-        if (p.type == PostType.VIDEO && !blur && s.autoplayMedia && !isExternalVideo(p)) {
+        if (p.type == PostType.VIDEO && !blur && autoplayNow(s) && !isExternalVideo(p)) {
             val vurl = postVideoUrl(p)
             if (vurl.isNotEmpty() && !vurl.lowercase().endsWith(".gif")) {
                 Box(Modifier.clip(shape)) {
@@ -1542,7 +1604,7 @@ private fun CalmMedia(p: Post, a: PostActions, s: Settings, shape: androidx.comp
                     .background(cs.surfaceContainerHighest)
                     .clickable(onClick = a::openMedia),
             ) {
-                if (url != null) FeedImage(url, Modifier.fillMaxSize(), brokenIcon = true)
+                if (url != null) FeedImage(url, Modifier.fillMaxSize(), brokenIcon = true, standIn = p.previewMedUrl)
                 if (p.type == PostType.VIDEO || p.type == PostType.GIF) PlayBadge(Modifier.align(Alignment.Center))
                 ExternalVideoPill(p, Modifier.align(Alignment.TopEnd).padding(8.dp))
                 if (p.type == PostType.GIF) MediaPill("GIF", Icons.Rounded.Gif, Modifier.align(Alignment.TopEnd).padding(8.dp))

@@ -12,6 +12,24 @@ struct Release: Identifiable {
 /// 2.0 (the native app, with Reddit Home). Add the new release at the top
 /// with every release.
 let CHANGELOG = [
+    Release(version: "2.0.115", date: "Nov 25, 2026", highlights: [
+        "Home feed: posts appear at their final size, the photo stays put instead of loading twice, and galleries fill in without resizing",
+        "Home feed: the flair fades in when it arrives",
+    ]),
+    Release(version: "2.0.114", date: "Nov 25, 2026", highlights: [
+        "Subreddit header: a bigger icon and name, sitting lower, and the icon's ring fully around it (#268)",
+        "Settings: the big title with the Expandable top bar, and the list split into two groups (#268, #276)",
+        "Videos: autoplay Off / On Wi-Fi only / Always, and pinch to zoom in the full-screen viewer",
+        "Posts: the poster's picture on post cards, in Appearance (off by default) (#270)",
+        "Comments: collapsing a comment animates (#273); a setting to not reopen threads where you left off (#269)",
+        "Searching a profile shows a \"From u/…\" tag (#271)",
+        "Fixes: popups spring back when not swiped away (#269), AI shows busy errors instead of spinning (#267)",
+    ]),
+    Release(version: "2.0.113", date: "Nov 25, 2026", highlights: [
+        "GIFs: GIF posts Reddit labels as images now play, as Reddit's small mp4 copy (#265)",
+        "Settings → Check for updates shows what's new in the release it offers (#266)",
+        "Subreddit header: the community's icon is no longer covered by the banner (#257)",
+    ]),
     Release(version: "2.0.112", date: "Nov 25, 2026", highlights: [
         "Subreddit header: a shorter band, in your accent colour when the community has no banner or colour; the description card and the icon's ring in the feed's colours (#257)",
     ]),

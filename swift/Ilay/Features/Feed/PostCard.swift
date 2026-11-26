@@ -423,6 +423,13 @@ private struct FeedAvatar: View {
         }
         .frame(width: size, height: size)
         .clipShape(.rect(cornerRadius: radius))
+        .overlay(alignment: .bottomTrailing) {
+            if row.config.postAvatars {
+                PosterBadge(post: row.post, size: (size * 0.45).rounded(), pixels: Int(size * 0.45 * row.config.scale),
+                            ring: row.config.isCarded ? Color(.secondarySystemGroupedBackground) : Color(.systemBackground))
+                    .offset(x: 3, y: 3)
+            }
+        }
     }
 
     private var tone: AnyShapeStyle {
@@ -432,6 +439,31 @@ private struct FeedAvatar: View {
         case 1: return AnyShapeStyle(.indigo)
         default: return AnyShapeStyle(.teal)
         }
+    }
+}
+
+/// The poster's profile picture on the community's icon, by the username line (#270).
+/// Asked for in one request with the other cards on screen; nothing until it's in, or
+/// when they have none. A ring in the card's colour sets it off the icon.
+private struct PosterBadge: View {
+    let post: Post
+    let size: CGFloat
+    let pixels: Int
+    let ring: Color
+
+    var body: some View {
+        ZStack {
+            if let url = app.authorAvatars.icons[post.author.lowercased()].flatMap(URL.init(string:)) {
+                SlotImage(url: url, pixels: pixels)
+                    .frame(width: size, height: size)
+                    .clipShape(Circle())
+                    .padding(1.5)
+                    .background(ring, in: Circle())
+            }
+        }
+        .frame(width: size + 3, height: size + 3)
+        .allowsHitTesting(false)
+        .task(id: post.authorFullname) { app.authorAvatars.wantPoster(post) }
     }
 }
 
@@ -458,9 +490,14 @@ private struct TextBelowTitle: View {
     let row: PostRow
 
     var body: some View {
-        if !row.flair.isEmpty {
-            FlairView(runs: row.flair, symbol: row.config.display.isCalm ? row.flairSymbol : nil).padding(.top, 6)
+        // A Reddit Home card gets its flair with the full post a moment later: fade it in.
+        ZStack(alignment: .leading) {
+            if !row.flair.isEmpty {
+                FlairView(runs: row.flair, symbol: row.config.display.isCalm ? row.flairSymbol : nil).padding(.top, 6)
+                    .transition(.opacity)
+            }
         }
+        .animation(.easeOut(duration: 0.25), value: row.flair.isEmpty)
         if let from = row.post.crosspostFrom {
             // A tap opens the original post and its comments (#100), not the card's post.
             Button {
@@ -623,7 +660,7 @@ private struct CardMedia: View {
             // keys its reveal by `id` instead.
             NsfwBlur(blur: row.blur, blurredImageUrl: row.post.blurredPreviewUrl, label: row.blurLabel, id: row.id, radius: radius) {
                 Button(action: a.openMedia) {
-                    SlotImage(url: url, pixels: pixels, brokenSymbol: "photo.badge.exclamationmark")
+                    SlotImage(url: url, pixels: pixels, brokenSymbol: "photo.badge.exclamationmark", placeholder: row.post.previewMedUrl.flatMap(URL.init(string:)))
                         .frame(height: height)
                         .frame(maxWidth: .infinity)
                         .overlay { if play { PlayBadge() } }
@@ -643,11 +680,15 @@ private struct CardMedia: View {
             // Its own view per post: a reused cell mustn't keep the last post's page (or
             // reveal). A spoiler / NSFW gallery covers each image, so it still swipes (#165).
             let cover = row.blur ? row.blurLabel : nil
+            // A Reddit Home card has only the first picture so far.
+            let images = row.post.gallery.isEmpty
+                ? row.post.previewMedUrl.map { [GalleryImage(url: $0, width: row.post.previewWidth, height: row.post.previewHeight)] } ?? []
+                : row.post.gallery
             Group {
                 if let carouselHeight {
-                    GalleryM3Carousel(images: row.post.gallery, title: row.post.title, height: carouselHeight, cover: cover)
+                    GalleryM3Carousel(images: images, title: row.post.title, height: carouselHeight, cover: cover, placeholder: row.post.previewMedUrl.flatMap(URL.init(string:)))
                 } else {
-                    GalleryCarousel(images: row.post.gallery, title: row.post.title, height: height, radius: radius, cover: cover)
+                    GalleryCarousel(images: images, title: row.post.title, height: height, radius: radius, cover: cover, placeholder: row.post.previewMedUrl.flatMap(URL.init(string:)))
                 }
             }
             .id(row.id)

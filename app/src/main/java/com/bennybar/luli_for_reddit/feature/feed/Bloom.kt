@@ -157,11 +157,16 @@ fun feedDecodeWidth(): Int {
 
 /** A Coil request for [url] decoded at most [widthPx] wide (never upscaled). */
 @Composable
-fun rememberSizedRequest(url: String?, widthPx: Int): ImageRequest? {
+fun rememberSizedRequest(url: String?, widthPx: Int, standIn: String? = null): ImageRequest? {
     val context = androidx.compose.ui.platform.LocalContext.current
-    return remember(url, widthPx) {
+    return remember(url, widthPx, standIn) {
         url?.let {
-            ImageRequest.Builder(context).data(it).size(Size(Dimension(widthPx), Dimension.Undefined)).build()
+            ImageRequest.Builder(context).data(it).size(Size(Dimension(widthPx), Dimension.Undefined))
+                // [standIn]: an image already in memory (the Reddit Home card's photo while the
+                // full post's copy loads), shown until [url] is ready and cross-faded, never a
+                // blank. Without transformations Coil keys memory by the URL alone.
+                .apply { if (standIn != null && standIn != it) placeholderMemoryCacheKey(standIn) }
+                .build()
         }
     }
 }
@@ -332,6 +337,7 @@ fun PillTextField(
     trailing: (@Composable () -> Unit)? = null,
     onSearch: ((String) -> Unit)? = null,
     singleLine: Boolean = true,
+    leadingChip: (@Composable () -> Unit)? = null, // in place of the icon: a tag on the search (#271)
 ) {
     val cs = MaterialTheme.colorScheme
     TextField(
@@ -339,7 +345,7 @@ fun PillTextField(
         onValueChange = onValueChange,
         modifier = modifier,
         placeholder = { Text(placeholder, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-        leadingIcon = { Icon(leading, null) },
+        leadingIcon = leadingChip ?: { Icon(leading, null) },
         trailingIcon = trailing,
         singleLine = singleLine,
         // A capsule at any height: a 28dp radius on the search screen's taller

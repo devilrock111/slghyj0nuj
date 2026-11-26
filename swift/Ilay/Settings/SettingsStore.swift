@@ -42,6 +42,7 @@ final class SettingsStore {
         s.dimReadTextOnly = b("dimReadTextOnly", s.dimReadTextOnly)
         s.dimRead = b("dimRead", s.dimRead)
         s.subredditIcons = b("subredditIcons", s.subredditIcons)
+        s.postAvatars = b("postAvatars", s.postAvatars)
         s.sideBarUserPrefix = b("sideBarUserPrefix", s.sideBarUserPrefix)
         s.markReadOnScroll = b("markReadOnScroll", s.markReadOnScroll)
         s.swipePostStart = SwipeAction.parse(p.getString("swipePostStart"), .upvote)
@@ -108,6 +109,7 @@ final class SettingsStore {
         s.postTextScale = min(max(p.getDouble("postTextScale") ?? s.postTextScale, 0.8), 1.6)
         s.commentTextScale = min(max(p.getDouble("commentTextScale") ?? s.commentTextScale, 0.8), 1.6)
         s.autoplayMedia = b("autoplayMedia", s.autoplayMedia)
+        s.autoplayWifiOnly = b("autoplayWifiOnly", s.autoplayWifiOnly)
         s.autoplaySound = b("autoplaySound", s.autoplaySound)
         s.viewerMuted = b("viewerMuted", s.viewerMuted)
         s.loopVideos = b("loopVideos", s.loopVideos)
@@ -121,6 +123,7 @@ final class SettingsStore {
         s.threadJumpMine = b("threadJumpMine", s.threadJumpMine)
         s.threadJumpNext = b("threadJumpNext", s.threadJumpNext)
         s.threadButtonsHideOnScroll = b("threadButtonsHideOnScroll", s.threadButtonsHideOnScroll)
+        s.resumeThreads = b("resumeThreads", s.resumeThreads)
         // Old installs may have stored the removed "compact" (1) or the old
         // expandable index (2); clamping maps both safely.
         if let m = p.getInt("topBarMode") {
@@ -246,6 +249,7 @@ final class SettingsStore {
         }
     }
     func setSubredditIcons(_ v: Bool) { p.setBool("subredditIcons", v); set { $0.subredditIcons = v } }
+    func setPostAvatars(_ v: Bool) { p.setBool("postAvatars", v); set { $0.postAvatars = v } }
     func setSideBarUserPrefix(_ v: Bool) { p.setBool("sideBarUserPrefix", v); set { $0.sideBarUserPrefix = v } }
     func setMarkReadOnScroll(_ v: Bool) { p.setBool("markReadOnScroll", v); set { $0.markReadOnScroll = v } }
 
@@ -289,6 +293,11 @@ final class SettingsStore {
     func setHiddenPostDays(_ v: Int) { p.setInt("hiddenPostDays", v); set { $0.hiddenPostDays = v } }
     func setTextScale(_ v: Double) { p.setDouble("textScale", v); set { $0.textScale = v } }
     func setAutoplayMedia(_ v: Bool) { p.setBool("autoplayMedia", v); set { $0.autoplayMedia = v } }
+    /// Off keeps the Wi-Fi choice, so the quick on/off switch turns back on to it.
+    func setAutoplayMode(_ m: AutoplayMode) {
+        setAutoplayMedia(m != .off)
+        if m != .off { p.setBool("autoplayWifiOnly", m == .wifi); set { $0.autoplayWifiOnly = m == .wifi } }
+    }
     func setAutoplaySound(_ v: Bool) { p.setBool("autoplaySound", v); set { $0.autoplaySound = v } }
     func setViewerMuted(_ v: Bool) { p.setBool("viewerMuted", v); set { $0.viewerMuted = v } }
     func setLoopVideos(_ v: Bool) { p.setBool("loopVideos", v); set { $0.loopVideos = v } }
@@ -302,6 +311,7 @@ final class SettingsStore {
     func setThreadJumpMine(_ v: Bool) { p.setBool("threadJumpMine", v); set { $0.threadJumpMine = v } }
     func setThreadJumpNext(_ v: Bool) { p.setBool("threadJumpNext", v); set { $0.threadJumpNext = v } }
     func setThreadButtonsHideOnScroll(_ v: Bool) { p.setBool("threadButtonsHideOnScroll", v); set { $0.threadButtonsHideOnScroll = v } }
+    func setResumeThreads(_ v: Bool) { p.setBool("resumeThreads", v); set { $0.resumeThreads = v } }
     func setTopBarMode(_ v: TopBarMode) { p.setInt("topBarMode", v.rawValue); set { $0.topBarMode = v } }
     func setTitleTextScale(_ v: Double) { p.setDouble("titleTextScale", v); set { $0.titleTextScale = v } }
     func setPostTextScale(_ v: Double) { p.setDouble("postTextScale", v); set { $0.postTextScale = v } }

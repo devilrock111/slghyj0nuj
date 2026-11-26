@@ -18,6 +18,8 @@ struct Post: Identifiable, Equatable, Sendable, Copyable {
     /// The subreddit's icon (from `sr_detail`), or nil: the card shows its first letter.
     var subredditIcon: String? = nil
     var author: String
+    /// The author's account id (t2_…), for their picture on cards (#270); empty when unknown.
+    var authorFullname: String = ""
     var score: Int
     var numComments: Int
     /// Nil when the source doesn't say (a card read from the Home page; GraphQL without the field).
@@ -137,6 +139,7 @@ struct Post: Identifiable, Equatable, Sendable, Copyable {
             subredditPrefixed: d["subreddit_name_prefixed"].str() ?? "",
             subredditIcon: (d["sr_detail"]["community_icon"].str()?.nilIfEmpty ?? d["sr_detail"]["icon_img"].str()?.nilIfEmpty)?.htmlAmpFixed(),
             author: d["author"].str() ?? "[deleted]",
+            authorFullname: d["author_fullname"].str() ?? "",
             score: d["score"].int() ?? 0,
             numComments: d["num_comments"].int() ?? 0,
             upvoteRatio: d["upvote_ratio"].double(),
@@ -176,7 +179,8 @@ struct Post: Identifiable, Equatable, Sendable, Copyable {
             previewHeight: preview?.height,
             hlsUrl: redditVideo["hls_url"].str() ?? (bareVreddit ? "https://v.redd.it/\(vreddit!.segments[0])/HLSPlaylist.m3u8" : nil),
             fallbackVideoUrl: redditVideo["fallback_url"].str(),
-            gifMp4Url: content["preview"]["reddit_video_preview"]["fallback_url"].str(),
+            gifMp4Url: content["preview"]["reddit_video_preview"]["fallback_url"].str()
+                ?? content["preview"]["images"][0]["variants"]["mp4"]["source"]["url"].str(),
             gallery: gallery,
             likes: d["likes"].bool(),
             parsedSnippet: snippetOf(selftext, bodyMedia)
@@ -187,17 +191,18 @@ struct Post: Identifiable, Equatable, Sendable, Copyable {
         if d["is_self"].isTrue() { return .selfPost }
         if hasGallery { return .gallery }
         if isVideo { return .video }
-        switch d["post_hint"].str() {
-        case "image": return .image
-        case "rich:video", "hosted:video": return .video
-        default: break
-        }
         let rawUrl = d["url"].str() ?? ""
         let parsed = URL(string: rawUrl)
         // Check the path without query params — preview.redd.it links end
         // with `.png?width=…&s=…`.
         let path = (parsed?.path ?? rawUrl).lowercased()
+        // Before post_hint: Reddit hints an i.redd.it GIF as "image" (#265).
         if path.hasSuffix(".gif") { return .gif }
+        switch d["post_hint"].str() {
+        case "image": return .image
+        case "rich:video", "hosted:video": return .video
+        default: break
+        }
         if path.hasSuffix(".jpg") || path.hasSuffix(".jpeg") || path.hasSuffix(".png") || path.hasSuffix(".webp") { return .image }
         if path.hasSuffix(".gifv") || path.hasSuffix(".mp4") { return .video }
         let host = parsed?.host?.lowercased() ?? ""
