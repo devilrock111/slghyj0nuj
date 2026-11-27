@@ -68,6 +68,7 @@ final class SettingsStore {
         s.floatingChips = b("floatingChips", s.floatingChips)
         s.fullBarNewPost = b("fullBarNewPost", s.fullBarNewPost)
         s.trackHistory = b("trackHistory", s.trackHistory)
+        s.saveSearchHistory = b("saveSearchHistory", s.saveSearchHistory)
         s.showRecentlyVisited = b("showRecentlyVisited", s.showRecentlyVisited)
         s.newPostsPill = b("newPostsPill", s.newPostsPill)
         s.exploreSections = ExploreSection.parse(p.getStringList(ExploreSection.prefsKey))
@@ -120,6 +121,8 @@ final class SettingsStore {
         s.notifyInbox = b("notifyInbox", s.notifyInbox)
         s.inboxCheckMinutes = p.getInt("inboxCheckMinutes") ?? s.inboxCheckMinutes
         s.homeFab = idx("homeFab", s.homeFab)
+        s.subredditFab = idx("subredditFab", s.subredditFab)
+        s.fabHideOnScroll = b("fabHideOnScroll", s.fabHideOnScroll)
         s.threadFabPosition = idx("threadFabPosition", s.threadFabPosition)
         s.threadJumpOp = b("threadJumpOp", s.threadJumpOp)
         s.threadJumpMine = b("threadJumpMine", s.threadJumpMine)
@@ -186,6 +189,7 @@ final class SettingsStore {
     func setFloatingChips(_ v: Bool) { p.setBool("floatingChips", v); set { $0.floatingChips = v } }
     func setFullBarNewPost(_ v: Bool) { p.setBool("fullBarNewPost", v); set { $0.fullBarNewPost = v } }
     func setTrackHistory(_ v: Bool) { p.setBool("trackHistory", v); set { $0.trackHistory = v } }
+    func setSaveSearchHistory(_ v: Bool) { p.setBool("saveSearchHistory", v); set { $0.saveSearchHistory = v } }
     func setNewPostsPill(_ v: Bool) { p.setBool("newPostsPill", v); set { $0.newPostsPill = v } }
     func setShowRecentlyVisited(_ v: Bool) { p.setBool("showRecentlyVisited", v); set { $0.showRecentlyVisited = v } }
     /// `entries` nil: back to the default Explore (and whatever sections later versions add to it).
@@ -313,6 +317,8 @@ final class SettingsStore {
     func setNotifyInbox(_ v: Bool) { p.setBool("notifyInbox", v); set { $0.notifyInbox = v } }
     func setInboxCheckMinutes(_ v: Int) { p.setInt("inboxCheckMinutes", v); set { $0.inboxCheckMinutes = v } }
     func setHomeFab(_ v: HomeFab) { p.setInt("homeFab", v.rawValue); set { $0.homeFab = v } }
+    func setSubredditFab(_ v: HomeFab) { p.setInt("subredditFab", v.rawValue); set { $0.subredditFab = v } }
+    func setFabHideOnScroll(_ v: Bool) { p.setBool("fabHideOnScroll", v); set { $0.fabHideOnScroll = v } }
     func setThreadFabPosition(_ v: ThreadFabPosition) { p.setInt("threadFabPosition", v.rawValue); set { $0.threadFabPosition = v } }
     func setThreadJumpOp(_ v: Bool) { p.setBool("threadJumpOp", v); set { $0.threadJumpOp = v } }
     func setThreadJumpMine(_ v: Bool) { p.setBool("threadJumpMine", v); set { $0.threadJumpMine = v } }

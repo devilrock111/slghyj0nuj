@@ -305,6 +305,7 @@ struct Settings: Equatable, Sendable {
     var floatingChips = true // Home: filter chips float under the top bar past the list's own
     var fullBarNewPost = true // Full top bar: a New post button beside your avatar
     var trackHistory = true
+    var saveSearchHistory = true // Search keeps your recent searches; off: none kept or shown (#302)
     var newPostsPill = true // a stale feed's fresh posts wait behind a "New posts" pill (#292)
     var showRecentlyVisited = true // Explore and the side bar list the subreddits you opened last
     var exploreSections = ExploreSection.parse(nil) // Explore's sections, and their order (#161)
@@ -360,6 +361,8 @@ struct Settings: Equatable, Sendable {
     var notifyInbox = false // background-poll the inbox + local notifications
     var inboxCheckMinutes = 15 // how often (#188); iOS treats it as "not before"
     var homeFab: HomeFab = .off // floating button on Home
+    var subredditFab: HomeFab = .newPost // subreddits' floating button (#300): New post, as it always was
+    var fabHideOnScroll = false // the feeds' floating button hides as you scroll down, not just folds (#301)
     var threadFabPosition: ThreadFabPosition = .right // where a thread's floating buttons sit (#126)
     var threadJumpOp: Bool = true // a thread's button for the original poster's comments (#126)
     var threadJumpMine: Bool = true // a thread's button for your own comments (#126)

@@ -181,6 +181,32 @@ final class FlutterPrefsCompatTests: XCTestCase {
         XCTAssertEqual(SettingsStore(prefs: p).value, store.value)
     }
 
+    /// Subreddits' floating button keeps New post until set (#300); hiding on scroll is off until set (#301).
+    @MainActor
+    func testFeedFloatingButtonSettings() {
+        XCTAssertEqual(Settings().subredditFab, .newPost)
+        XCTAssertFalse(Settings().fabHideOnScroll)
+        let p = Prefs(defaults: defaults)
+        let store = SettingsStore(prefs: p)
+        store.setSubredditFab(.off)
+        store.setFabHideOnScroll(true)
+        XCTAssertEqual(p.getInt("subredditFab"), 0)
+        XCTAssertEqual(p.getBool("fabHideOnScroll"), true)
+        let back = SettingsStore(prefs: p).value
+        XCTAssertEqual(back.subredditFab, .off)
+        XCTAssertTrue(back.fabHideOnScroll)
+    }
+
+    /// Search history is kept until switched off (#302).
+    @MainActor
+    func testSaveSearchHistorySetting() {
+        XCTAssertTrue(Settings().saveSearchHistory)
+        let p = Prefs(defaults: defaults)
+        SettingsStore(prefs: p).setSaveSearchHistory(false)
+        XCTAssertEqual(p.getBool("saveSearchHistory"), false)
+        XCTAssertFalse(SettingsStore(prefs: p).value.saveSearchHistory)
+    }
+
     /// Dim read posts → Off (#106) is its own key: `dimReadTextOnly` keeps its meaning.
     @MainActor
     func testDimReadOffKeepsTheTextOnlyChoice() {

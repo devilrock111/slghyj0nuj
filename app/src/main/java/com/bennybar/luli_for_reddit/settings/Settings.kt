@@ -280,6 +280,7 @@ data class Settings(
     val floatingChipsSolid: Boolean = true, // the floating chips sit on the top bar's background; off: transparent, as before 2.0.58 (#91)
     val fullBarNewPost: Boolean = true, // Full top bar: a New post button beside your avatar
     val trackHistory: Boolean = true,
+    val saveSearchHistory: Boolean = true, // Search keeps your recent searches; off: none kept or shown (#302)
     val newPostsPill: Boolean = true, // a stale feed's fresh posts wait behind a "New posts" pill (#292)
     val showRecentlyVisited: Boolean = true, // Explore and the side bar list the subreddits you opened last
     val offlineCache: Boolean = true,
@@ -334,6 +335,8 @@ data class Settings(
     val inboxCheckMinutes: Int = 15, // how often (#188): 15 is Android's shortest
     val redditAppNotifications: Boolean = false, // take over the Reddit app's notifications (needs notification access)
     val homeFab: HomeFab = HomeFab.NEW_POST, // floating button on Home and in subreddits (#90)
+    val subredditFab: HomeFab? = null, // subreddits' own floating button; null: the same as Home's (#300)
+    val fabHideOnScroll: Boolean = false, // the feeds' floating button hides as you scroll down, not just folds (#301)
     val threadFab: ThreadFab = ThreadFab.NEW_COMMENT, // floating button in a thread (#90)
     val threadFabPosition: ThreadFabPosition = ThreadFabPosition.RIGHT, // horizontal position of the thread toolbar
     val threadJumpOp: Boolean = true, // show OP comments jump button in thread toolbar
