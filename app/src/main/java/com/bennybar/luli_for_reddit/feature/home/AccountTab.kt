@@ -1,5 +1,8 @@
 package com.bennybar.luli_for_reddit.feature.home
 
+import androidx.compose.foundation.layout.statusBarsPadding
+import com.bennybar.luli_for_reddit.feature.feed.BannerBar
+import com.bennybar.luli_for_reddit.settings.HeaderHeight
 import com.bennybar.luli_for_reddit.feature.feed.rememberCollapsingTitle
 import com.bennybar.luli_for_reddit.feature.feed.CollapsingTitleBar
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -80,6 +83,8 @@ import com.bennybar.luli_for_reddit.feature.feed.SectionHeader
 import com.bennybar.luli_for_reddit.feature.feed.TapGuard
 import com.bennybar.luli_for_reddit.nav.LocalNavigator
 import com.bennybar.luli_for_reddit.nav.Route
+import com.bennybar.luli_for_reddit.nav.searchMorphSource
+import com.bennybar.luli_for_reddit.nav.searchMorphSourceText
 import com.bennybar.luli_for_reddit.ui.SearchIcon
 import com.bennybar.luli_for_reddit.settings.TopBarMode
 import com.bennybar.luli_for_reddit.ui.Overlays
@@ -92,8 +97,11 @@ import kotlinx.coroutines.launch
  * your stuff.
  */
 @Composable
-internal fun ProfileTab() {
+internal fun ProfileTab(selected: Boolean = true) {
     val nav = LocalNavigator.current
+    // What the Search screen's field grows out of, as on Posts (#295); only while shown.
+    val searchSource = if (selected) Modifier.searchMorphSource() else Modifier
+    val searchText = if (selected) Modifier.searchMorphSourceText() else Modifier
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val session by app.session.state.collectAsStateWithLifecycle()
@@ -109,17 +117,28 @@ internal fun ProfileTab() {
         if (anonymous || username.isEmpty()) signedOutList.firstVisibleItemIndex == 0 && signedOutList.firstVisibleItemScrollOffset == 0
         else profileHeader.floatValue == 0f
     }
-    val expandable = app.settings.state.collectAsStateWithLifecycle().value.topBarMode != TopBarMode.FULL
-    Column(Modifier.fillMaxSize().then(if (expandable) Modifier.nestedScroll(collapsing) else Modifier)) {
+    val settings by app.settings.state.collectAsStateWithLifecycle()
+    val expandable = settings.topBarMode != TopBarMode.FULL
+    val signedOut = anonymous || username.isEmpty()
+    // Expandable, Medium or Tall: your profile with the community page's header (#293), your
+    // banner under the status bar and your name in place of the "Profile" title.
+    val bannerHeader = !signedOut && expandable && settings.headerHeight != HeaderHeight.FOLDED
+    Column(
+        Modifier.fillMaxSize()
+            .then(if (bannerHeader) Modifier else Modifier.statusBarsPadding())
+            .then(if (expandable && !bannerHeader) Modifier.nestedScroll(collapsing) else Modifier),
+    ) {
         val sideBar = LocalSideBar.current != null
-        val settings by app.settings.state.collectAsStateWithLifecycle()
-        val signedOut = anonymous || username.isEmpty()
-        if (settings.topBarMode == TopBarMode.FULL) {
+        if (bannerHeader) {
+            // The bar's buttons are drawn over the banner by the profile below.
+        } else if (settings.topBarMode == TopBarMode.FULL) {
             // As Posts and Explore (#214): the round search bar, here for your own posts
             // (Reddit's search finds posts by author, not comments), then the ⋯ menu.
             TabSearchBar(
                 if (signedOut) "Search Reddit" else "Search your posts",
                 onSearch = { nav.push(if (signedOut) Route.Search() else Route.Search(query = "author:$username")) },
+                searchModifier = searchSource,
+                textModifier = searchText,
             ) {
                 // The side bar always has Settings (#138).
                 if (signedOut) {
@@ -135,7 +154,7 @@ internal fun ProfileTab() {
         ) {
             if (!signedOut && settings.inboxInProfile) InboxButton()
             // As the other tabs' (#228): your own posts, or Reddit signed out.
-            IconButton(onClick = { nav.push(if (signedOut) Route.Search() else Route.Search(query = "author:$username")) }) {
+            IconButton(onClick = { nav.push(if (signedOut) Route.Search() else Route.Search(query = "author:$username")) }, modifier = searchSource) {
                 Icon(SearchIcon, if (signedOut) "Search Reddit" else "Search your posts")
             }
             if (signedOut) {
@@ -170,6 +189,16 @@ internal fun ProfileTab() {
                     username, Modifier.fillMaxSize(), app.feed.tabReselect(3),
                     onSwitchAccount = { scope.launch { showAccountSheet(username, context) } },
                     headerOffsetState = profileHeader,
+                    bannerBar = if (!bannerHeader) null else BannerBar(
+                        leading = if (sideBar) ({ SideBarButton() }) else null,
+                        actions = {
+                            if (settings.inboxInProfile) InboxButton()
+                            IconButton(onClick = { nav.push(Route.Search(query = "author:$username")) }, modifier = searchSource) {
+                                Icon(SearchIcon, "Search your posts")
+                            }
+                            YourStuffMenu()
+                        },
+                    ),
                 )
             }
         }
