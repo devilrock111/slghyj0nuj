@@ -1896,7 +1896,7 @@ private fun CompactTitle(p: Post, weight: FontWeight) {
 @Composable
 private fun CompactSnippet(p: Post, s: Settings) {
     if (p.snippet.isEmpty()) return
-    SpoilerOr(p) {
+    SpoilerOr(p, s) {
         ScaledText(TextKind.POST_TEXT) { Text(
             rememberSnippet(p),
             Modifier.padding(top = 4.dp).readDim(),
